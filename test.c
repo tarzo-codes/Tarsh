@@ -6,5 +6,5 @@
 
 
 int main() {
-  printf("%s\n",getenv("HOME"));
+  printf("%s\n",getenv("PWD"));
 }

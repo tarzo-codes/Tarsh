@@ -5,6 +5,9 @@
 #include <sys/wait.h>
 
 
+#include "echo.h"
+#include "cd.h"
+
 
 int main() {
   char prompt[128] = "$";
@@ -51,43 +54,18 @@ int main() {
     }
 
    
-  else if (strcmp(args[0], "echo") == 0) {
-      if (args[1] != NULL) {
-        if (args[1][0] == '$') {
-          if (getenv(args[1] + 1) != NULL) {
-            printf("%s\n", getenv(args[1] + 1));
-          }
-          else {
-            printf("\n");
-          }
-        } 
-        else {
-          printf("%s\n", args[1]);
-        }
-      } 
-      else {
-        printf("\n");
-      }
-      
+   if (strcmp(args[0], "echo") == 0) {
+      // Check the echo.c file for errors or fixes
+      handleEcho(args);
       continue;
     }
-
 
     // Process management
-    if (strcmp(args[0],"cd")==0) {
-      //do something
-      if (args[1]==NULL) {
-        chdir(getenv("HOME"));
-      }
-      else {
-        chdir(args[1]);
-      }
-      getcwd(prompt, sizeof(prompt)); // 1. Fill prompt with the path
-      strcat(prompt, " $");           // 2. Glue the " $" right onto the end
-  
+  if (strcmp(args[0], "cd") == 0) {
+            handle_cd(args, prompt, sizeof(prompt)); 
+            continue;
+        }
 
-      continue;
-    }
 
     pid_t p = fork();
     if (p < 0) {
