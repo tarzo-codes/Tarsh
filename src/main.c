@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>    // For fork() and execvp()
+#include <sys/wait.h>  // For waitpid()
 
 #include "parser.h"
 
@@ -45,6 +47,28 @@ int main() {
     for (int i = 0;args[i] != NULL;i++) {
       printf("  -> Arguments[%d]: %s\n",i,args[i]);
     }
+
+    // NOTE: Args processing
+    pid_t pid = fork();
+
+    if (pid < 0) {
+      perror("Frok failure");
+      exit(EXIT_FAILURE);
+    }
+    else if (pid == 0) {
+      //child process
+      execvp(args[0],args);
+
+      //Handle failed command
+      printf("Command: %s",command_buffer);
+      perror("Command failed ");
+      exit(EXIT_FAILURE);
+    }
+    else {
+      //parent process;
+      waitpid();
+    }
+
     free(args);
   }
   free(command_buffer);
