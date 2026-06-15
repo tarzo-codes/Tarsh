@@ -30,19 +30,6 @@ gcc src/main.c src/parser.c -o tarsh
 ./tarsh
 ```
 
-## project structure
-
-```
-tarsh/
-├── modules/         # optional extensions — add your own stuff here
-├── functions/       # custom shell features (coming soon)
-├── src/
-│   ├── main.c       # entry point, REPL loop
-│   ├── parser.c     # tokenizer and input handling
-│   └── parser.h     # parser declarations
-└── README.md
-```
-
 ## why?
 
 because the best way to understand a tool is to build it yourself. shells feel like magic until you write one.
