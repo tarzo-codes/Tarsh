@@ -5,10 +5,14 @@
 #include <sys/wait.h>  // For waitpid()
 
 #include "parser.h"
+#include "prompts.h"
 
 int main() {
     char *command_buffer = NULL;
     size_t buffer_size = 0;
+    // NOTE: Initial termianl prompt setup;
+    setup_prompt();
+
     while (true) {
     
     printf(" $ ");
@@ -66,7 +70,8 @@ int main() {
     }
     else {
       //parent process;
-      waitpid();
+      int status;
+      waitpid(pid, &status, 0);
     }
 
     free(args);
