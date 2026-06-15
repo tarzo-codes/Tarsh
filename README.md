@@ -8,18 +8,6 @@
 
 > 🚧 early stage — just getting started.
 
-## current progress
-
-- [x] input parsing and tokenization
-
-coming next:
-- [ ] command execution via `execvp`
-- [ ] built-in commands (`cd`, `exit`, `help`)
-- [ ] piping (`|`)
-- [ ] i/o redirection (`>`, `<`, `>>`)
-- [ ] background processes (`&`)
-
-## build & run
 
 **requirements:** `gcc`, any Unix-like system (Linux/macOS)
 
