@@ -1,0 +1,9 @@
+# build output
+tarsh
+*.o
+src/main
+test
+
+# editor / tooling
+.cache/
+compile_commands.json
