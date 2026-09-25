@@ -6,12 +6,28 @@
 #include <limits.h>
 
 #include "builtins.h"
+#include "lang.h"
+#include "lineedit.h"
 
 extern char **environ;
 
 static const char *builtin_names[] = {
-  "cd", "pwd", "echo", "export", "unset", "help", "exit", NULL
+  "cd", "pwd", "echo", "export", "unset", "lang", "history", "help", "exit", NULL
 };
+
+const char *builtin_name_at(int index) {
+  int count = (int)(sizeof(builtin_names) / sizeof(builtin_names[0])) - 1;
+  if (index < 0 || index >= count) {
+    return NULL;
+  }
+  return builtin_names[index];
+}
+
+void builtin_write_names(FILE *file) {
+  for (int i = 0;builtin_names[i] != NULL;i++) {
+    fprintf(file, "%s\n", builtin_names[i]);
+  }
+}
 
 int builtin_exists(const char *name) {
   for (int i = 0;builtin_names[i] != NULL;i++) {
@@ -145,18 +161,60 @@ static int builtin_unset(ArgList *args) {
   return status;
 }
 
+static int builtin_lang(ArgList *args) {
+  if (args->count == 1) {
+    printf("tarsh runs simple commands itself. pipes (|), redirects (>), &&, loops,\n");
+    printf("wildcards (*) and scripts are run with your chosen shell language:\n\n");
+    lang_list();
+    printf("\nswitch with: lang bash | lang zsh | lang fish | lang sh\n");
+    return 0;
+  }
+  return lang_set(args->items[1]);
+}
+
+static int builtin_history(ArgList *args) {
+  int total = lineedit_history_count();
+  int first = 0;
+  if (args->count > 1) {
+    int wanted = atoi(args->items[1]);
+    if (wanted > 0 && wanted < total) {
+      first = total - wanted;
+    }
+  }
+  for (int i = first;i < total;i++) {
+    printf("%5d  %s\n", i + 1, lineedit_history_get(i));
+  }
+  return 0;
+}
+
 static int builtin_help(void) {
-  printf("tarsh - a no-frills Unix shell\n\n");
+  printf("tarsh - a beginner-friendly shell\n\n");
+  printf("finding things (needs fzf):\n");
+  printf("  cd<space>        pick a folder to go into\n");
+  printf("  nvim<space>      pick files to edit (also vim, nano, cat, less, code)\n");
+  printf("  cp<space>        pick what to copy, then where to put it (mv works the same)\n");
+  printf("  rm<space>        pick files to delete (Tab selects several)\n");
+  printf("  Tab              pick a command, or a path for the word you're typing\n");
+  printf("  Ctrl+R           search commands you ran before\n");
+  printf("  in a picker: type to filter, Enter to choose, Esc to type it yourself\n\n");
+  printf("editing the line:\n");
+  printf("  Up/Down          previous/next command      Ctrl+A/Ctrl+E  start/end of line\n");
+  printf("  Ctrl+W           delete a word              Ctrl+U         delete to start\n");
+  printf("  Ctrl+C           cancel the line or stop the running command\n");
+  printf("  Ctrl+L           clear the screen           Ctrl+D         exit (on an empty line)\n\n");
   printf("builtins:\n");
-  printf("  cd [dir|-]      change the working directory\n");
-  printf("  pwd             print the working directory\n");
-  printf("  echo [-n] ...   print arguments\n");
-  printf("  export N=V      set an environment variable\n");
-  printf("  unset NAME      remove an environment variable\n");
-  printf("  help            show this message\n");
-  printf("  exit [status]   leave the shell\n\n");
-  printf("anything else is looked up on PATH and run in a child process.\n");
-  printf("prompt settings live in ~/.config/tarsh/config.t\n");
+  printf("  cd [dir|-]       change folder (- goes back to the previous one)\n");
+  printf("  pwd              show which folder you're in\n");
+  printf("  echo [-n] ...    print text\n");
+  printf("  export N=V       set a variable (N=V on its own works too)\n");
+  printf("  unset NAME       remove a variable\n");
+  printf("  lang [name]      show or change the shell language (bash, zsh, fish, sh)\n");
+  printf("  history [n]      list previous commands\n");
+  printf("  help             show this message\n");
+  printf("  exit [status]    leave the shell\n\n");
+  printf("anything with pipes, redirects, &&, loops or wildcards runs in your shell\n");
+  printf("language (currently %s). settings live in ~/.config/tarsh/config.t\n",
+         lang_current_name());
   return 0;
 }
 
@@ -168,12 +226,37 @@ static int builtin_exit(ArgList *args, int *should_exit) {
   return 0;
 }
 
+static int is_assignment(const char *word) {
+  const char *separator = strchr(word, '=');
+  if (separator == NULL || separator == word) {
+    return 0;
+  }
+  for (const char *c = word;c < separator;c++) {
+    int letter = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || *c == '_';
+    int digit = (*c >= '0' && *c <= '9');
+    if (!letter && !(digit && c != word)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 int builtin_run(ArgList *args, int *status, int *should_exit) {
   if (args->count == 0) {
     return 0;
   }
 
   const char *name = args->items[0];
+
+  // A bare NAME=value sets a variable for this session.
+  if (args->count == 1 && is_assignment(name)) {
+    char *separator = strchr(args->items[0], '=');
+    *separator = '\0';
+    setenv(args->items[0], separator + 1, 1);
+    *separator = '=';
+    *status = 0;
+    return 1;
+  }
 
   if (strcmp(name, "cd") == 0) {
     *status = builtin_cd(args);
@@ -189,6 +272,12 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
   }
   else if (strcmp(name, "unset") == 0) {
     *status = builtin_unset(args);
+  }
+  else if (strcmp(name, "lang") == 0) {
+    *status = builtin_lang(args);
+  }
+  else if (strcmp(name, "history") == 0) {
+    *status = builtin_history(args);
   }
   else if (strcmp(name, "help") == 0) {
     *status = builtin_help();

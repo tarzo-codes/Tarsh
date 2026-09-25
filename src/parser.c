@@ -62,17 +62,90 @@ static int is_token_space(char c) {
   return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-int main_command_parser(const char *buffer, ArgList *args) {
+static int last_status = 0;
+
+void parser_set_last_status(int status) {
+  last_status = status;
+}
+
+// A small growable string for building one token at a time.
+typedef struct {
+  char *data;
+  size_t length;
+  size_t capacity;
+}Builder;
+
+static void builder_push(Builder *builder, const char *text, size_t length) {
+  if (builder->length + length + 1 > builder->capacity) {
+    size_t new_capacity = builder->capacity * 2;
+    while (builder->length + length + 1 > new_capacity) {
+      new_capacity *= 2;
+    }
+    char *grown = realloc(builder->data, new_capacity);
+    if (grown == NULL) {
+      fatal_oom();
+    }
+    builder->data = grown;
+    builder->capacity = new_capacity;
+  }
+  memcpy(builder->data + builder->length, text, length);
+  builder->length += length;
+  builder->data[builder->length] = '\0';
+}
+
+static void builder_char(Builder *builder, char c) {
+  builder_push(builder, &c, 1);
+}
+
+static int is_name_char(char c, int first) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
+         (!first && c >= '0' && c <= '9');
+}
+
+// Expands the variable reference starting at buffer[i] (which is '$').
+// Returns how many characters of the source were consumed.
+static size_t expand_variable(const char *buffer, size_t i, Builder *out) {
+  const char *start = buffer + i + 1;
+
+  if (*start == '?') {
+    char digits[16];
+    int written = snprintf(digits, sizeof(digits), "%d", last_status);
+    builder_push(out, digits, written);
+    return 2;
+  }
+
+  int braced = (*start == '{');
+  const char *name = braced ? start + 1 : start;
+  size_t name_length = 0;
+  while (is_name_char(name[name_length], name_length == 0)) {
+    name_length++;
+  }
+
+  if (name_length == 0 || (braced && name[name_length] != '}')) {
+    // Not a variable reference after all: keep the '$' literally.
+    builder_char(out, '$');
+    return 1;
+  }
+
+  char key[256];
+  snprintf(key, sizeof(key), "%.*s", (int)name_length, name);
+  const char *value = getenv(key);
+  if (value != NULL) {
+    builder_push(out, value, strlen(value));
+  }
+  return 1 + name_length + (braced ? 2 : 0);
+}
+
+static int tokenize(const char *buffer, ArgList *args, int expand) {
   arglist_reset(args);
 
-  // The unquoted result of a token is never longer than its source text,
-  // so one scratch buffer of that size is always enough.
-  size_t length = strlen(buffer);
-  char *scratch = malloc(length + 1);
-  if (scratch == NULL) {
+  Builder token = { NULL, 0, 64 };
+  token.data = malloc(token.capacity);
+  if (token.data == NULL) {
     fatal_oom();
   }
 
+  size_t length = strlen(buffer);
   size_t i = 0;
   while (i < length) {
     while (i < length && is_token_space(buffer[i])) {
@@ -82,8 +155,20 @@ int main_command_parser(const char *buffer, ArgList *args) {
       break;
     }
 
-    size_t out = 0;
+    token.length = 0;
+    token.data[0] = '\0';
     char quote = '\0';
+    int saw_quote = 0;
+
+    // ~ and ~/path expand to $HOME, but only unquoted at a word's start.
+    if (expand && buffer[i] == '~' &&
+        (i + 1 >= length || buffer[i + 1] == '/' || is_token_space(buffer[i + 1]))) {
+      const char *home = getenv("HOME");
+      if (home != NULL) {
+        builder_push(&token, home, strlen(home));
+        i++;
+      }
+    }
 
     while (i < length) {
       char c = buffer[i];
@@ -93,6 +178,7 @@ int main_command_parser(const char *buffer, ArgList *args) {
       }
       else if (quote == '\0' && (c == '\'' || c == '"')) {
         quote = c;
+        saw_quote = 1;
         i++;
       }
       else if (quote != '\0' && c == quote) {
@@ -104,35 +190,51 @@ int main_command_parser(const char *buffer, ArgList *args) {
         // outside quotes a backslash escapes anything.
         char next = buffer[i + 1];
         if (quote == '"' && next != '"' && next != '\\' && next != '$') {
-          scratch[out++] = c;
+          builder_char(&token, c);
           i++;
         }
         else {
-          scratch[out++] = next;
+          builder_char(&token, next);
           i += 2;
         }
       }
+      else if (expand && c == '$' && quote != '\'') {
+        i += expand_variable(buffer, i, &token);
+      }
       else {
-        scratch[out++] = c;
+        builder_char(&token, c);
         i++;
       }
     }
 
     if (quote != '\0') {
-      free(scratch);
+      free(token.data);
       arglist_reset(args);
       return -1;
     }
 
-    scratch[out] = '\0';
-    char *token = strdup(scratch);
-    if (token == NULL) {
-      free(scratch);
+    // An unquoted variable that expanded to nothing is not an argument,
+    // matching sh: `echo $UNSET x` passes one argument, not two.
+    if (token.length == 0 && !saw_quote) {
+      continue;
+    }
+
+    char *copy = strdup(token.data);
+    if (copy == NULL) {
+      free(token.data);
       fatal_oom();
     }
-    arglist_push(args, token);
+    arglist_push(args, copy);
   }
 
-  free(scratch);
+  free(token.data);
   return args->count;
+}
+
+int main_command_parser(const char *buffer, ArgList *args) {
+  return tokenize(buffer, args, 1);
+}
+
+int parser_split_words(const char *buffer, ArgList *args) {
+  return tokenize(buffer, args, 0);
 }

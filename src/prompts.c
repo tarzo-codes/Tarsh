@@ -7,89 +7,25 @@
 #include <limits.h>
 
 #include "prompts.h"
+#include "lang.h"
 
-#define DEFAULT_FORMAT "[%u@%h] %w %s "
+#define DEFAULT_FORMAT "[%u@%h] %w (%l) %s "
 #define PROMPT_RENDER_MAX 1024
 
 static PromptState active_config;
 static char rendered_prompt[PROMPT_RENDER_MAX];
 
-// Trims trailing whitespace and newlines from a config value in place.
-static void trim_trailing(char *text) {
-  size_t length = strlen(text);
-  while (length > 0 && (text[length - 1] == '\n' || text[length - 1] == '\r' ||
-                        text[length - 1] == ' ' || text[length - 1] == '\t')) {
-    text[length - 1] = '\0';
-    length--;
-  }
-}
-
-// Builds "$HOME/.config/tarsh", creating it when absent. Returns a
-// malloc'd path the caller owns, or NULL if it could not be built.
-static char *ensure_config_directory(void) {
-  char *home = getenv("HOME");
-  if (home == NULL) {
-    home = ".";
-  }
-
-  int dir_size = snprintf(NULL, 0, "%s/.config/tarsh", home);
-  char *dir_path = malloc(dir_size + 1);
-  if (dir_path == NULL) {
-    return NULL;
-  }
-  snprintf(dir_path, dir_size + 1, "%s/.config/tarsh", home);
-
-  // Create $HOME/.config first; mkdir() does not build parents for us.
-  int parent_size = snprintf(NULL, 0, "%s/.config", home);
-  char *parent_path = malloc(parent_size + 1);
-  if (parent_path != NULL) {
-    snprintf(parent_path, parent_size + 1, "%s/.config", home);
-    mkdir(parent_path, 0700);
-    free(parent_path);
-  }
-
-  mkdir(dir_path, 0700);
-  return dir_path;
-}
-
-static void write_default_config(const char *config_path) {
-  FILE *file = fopen(config_path, "w");
-  if (file == NULL) {
-    return;
-  }
-  fprintf(file, "# Tarsh Configuration File\n");
-  fprintf(file, "# Modify these values to customize\n");
-  fprintf(file, "#   %%u username   %%h hostname   %%w working directory\n");
+void prompt_write_defaults(FILE *file) {
+  fprintf(file, "# Prompt\n");
+  fprintf(file, "#   %%u username   %%h hostname   %%w working directory   %%l shell language\n");
   fprintf(file, "#   %%s symbol     %%t last duration   %%? last exit status\n");
   fprintf(file, "FORMAT=%s\n", DEFAULT_FORMAT);
   fprintf(file, "DEPTH=%d\n", active_config.directory_depth);
   fprintf(file, "SHOW_TIME=%d\n", active_config.show_execution_time);
   fprintf(file, "SYMBOL=%s\n", active_config.prompt_symbol);
-  fclose(file);
-  printf("[Shell Initialization] Generated default config at: %s\n", config_path);
 }
 
-static void apply_config_line(char *line) {
-  trim_trailing(line);
-
-  // Skip blank lines and comments.
-  char *cursor = line;
-  while (*cursor == ' ' || *cursor == '\t') {
-    cursor++;
-  }
-  if (*cursor == '\0' || *cursor == '#') {
-    return;
-  }
-
-  char *separator = strchr(cursor, '=');
-  if (separator == NULL) {
-    return;
-  }
-  *separator = '\0';
-  char *key = cursor;
-  char *value = separator + 1;
-  trim_trailing(key);
-
+int prompt_configure(const char *key, const char *value) {
   if (strcmp(key, "FORMAT") == 0 || strcmp(key, "FORMATE") == 0) {
     // FORMATE is the misspelling older configs were written with.
     snprintf(active_config.format, sizeof(active_config.format), "%s", value);
@@ -108,6 +44,10 @@ static void apply_config_line(char *line) {
       snprintf(active_config.prompt_symbol, sizeof(active_config.prompt_symbol), "%s", value);
     }
   }
+  else {
+    return 0;
+  }
+  return 1;
 }
 
 void setup_prompt(void) {
@@ -130,34 +70,6 @@ void setup_prompt(void) {
     snprintf(active_config.hostname, sizeof(active_config.hostname), "localhost");
   }
   active_config.hostname[sizeof(active_config.hostname) - 1] = '\0';
-
-  char *dir_path = ensure_config_directory();
-  if (dir_path == NULL) {
-    return;
-  }
-
-  int file_size = snprintf(NULL, 0, "%s/config.t", dir_path);
-  char *config_path = malloc(file_size + 1);
-  if (config_path == NULL) {
-    free(dir_path);
-    return;
-  }
-  snprintf(config_path, file_size + 1, "%s/config.t", dir_path);
-
-  FILE *file = fopen(config_path, "r");
-  if (file == NULL) {
-    write_default_config(config_path);
-  }
-  else {
-    char line[PROMPT_FORMAT_MAX + 64];
-    while (fgets(line, sizeof(line), file) != NULL) {
-      apply_config_line(line);
-    }
-    fclose(file);
-  }
-
-  free(dir_path);
-  free(config_path);
 }
 
 void update_prompt(double duration_seconds, int status) {
@@ -234,6 +146,9 @@ const char *render_prompt(void) {
         break;
       case 'w':
         append_working_directory(rendered_prompt, sizeof(rendered_prompt), &used);
+        break;
+      case 'l':
+        used += snprintf(rendered_prompt + used, remaining, "%s", lang_current_name());
         break;
       case 's':
         used += snprintf(rendered_prompt + used, remaining, "%s", active_config.prompt_symbol);

@@ -1,6 +1,6 @@
 CC      ?= gcc
 CFLAGS  ?= -std=gnu11 -Wall -Wextra -O2
-SRC     := src/main.c src/parser.c src/prompts.c src/builtins.c
+SRC     := $(wildcard src/*.c)
 TARGET  := tarsh
 PREFIX  ?= /usr/local
 
@@ -8,7 +8,7 @@ PREFIX  ?= /usr/local
 
 all: $(TARGET)
 
-$(TARGET): $(SRC) src/parser.h src/prompts.h src/builtins.h
+$(TARGET): $(SRC) $(wildcard src/*.h)
 	$(CC) $(CFLAGS) $(SRC) -o $@
 
 debug: CFLAGS += -g -O0 -fsanitize=address,undefined

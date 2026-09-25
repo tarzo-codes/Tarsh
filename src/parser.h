@@ -15,8 +15,16 @@ void arglist_free(ArgList *args);
 
 // Splits `buffer` into tokens. Whitespace separates tokens, single quotes
 // are literal, double quotes allow \" escapes, and a backslash outside
-// quotes escapes the next character. Returns the number of tokens, or -1
-// on an unterminated quote.
+// quotes escapes the next character. Outside single quotes $NAME, ${NAME}
+// and $? are expanded, and a leading ~ becomes $HOME. Returns the number
+// of tokens, or -1 on an unterminated quote.
 int main_command_parser(const char *buffer, ArgList *args);
+
+// Same tokenizing rules, but no $ or ~ expansion. Used to inspect what
+// the user is still typing.
+int parser_split_words(const char *buffer, ArgList *args);
+
+// The value $? expands to.
+void parser_set_last_status(int status);
 
 #endif

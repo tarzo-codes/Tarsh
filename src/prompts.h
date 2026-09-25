@@ -23,9 +23,17 @@ typedef struct {
   int last_command_status;
 }PromptState;
 
-// Loads ~/.config/tarsh/config.t, writing a default one first if it is
-// missing. Safe to call once at startup.
+#include <stdio.h>
+
+// Sets the built-in defaults. Call before config_load().
 void setup_prompt(void);
+
+// Applies one KEY=VALUE pair from the config file. Returns 1 if the key
+// belongs to the prompt, 0 otherwise.
+int prompt_configure(const char *key, const char *value);
+
+// Writes the prompt's section of a fresh config file.
+void prompt_write_defaults(FILE *file);
 
 // Records how the previous command went so the next prompt can show it.
 void update_prompt(double duration_seconds, int status);
