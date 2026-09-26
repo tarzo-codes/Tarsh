@@ -10,6 +10,7 @@
 #include "lineedit.h"
 #include "config.h"
 #include "fzf.h"
+#include "complete.h"
 
 #define HISTORY_MAX 1000
 
@@ -458,7 +459,14 @@ char *lineedit_read(const char *prompt) {
         break;
 
       case '\t':
-        fzf_on_tab(&line);
+        // fzf picker when available, classic completion otherwise.
+        if (!fzf_on_tab(&line)) {
+          complete_basic(&line);
+        }
+        break;
+
+      case KEY_CTRL('z'):
+        // Nothing is running at the prompt, so there's nothing to suspend.
         break;
 
       case KEY_CTRL('r'):

@@ -12,9 +12,4 @@ int path_lookup(const char *name, char *out, size_t out_size);
 // returned unquoted.
 char *shell_quote(const char *text);
 
-// Forks, execs argv[0] from $PATH and waits. Returns the exit status the
-// shell should report (127 not found, 126 not executable, 128+n killed by
-// signal n).
-int spawn_and_wait(char *const argv[]);
-
 #endif

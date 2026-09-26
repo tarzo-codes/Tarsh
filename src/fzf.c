@@ -396,7 +396,6 @@ static char *temp_list(FILE **file_out) {
 
 int fzf_on_tab(EditBuffer *line) {
   if (!fzf_enabled()) {
-    show_missing_hint();
     return 0;
   }
 

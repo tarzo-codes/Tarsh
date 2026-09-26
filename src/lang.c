@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 
 #include "lang.h"
+#include "jobs.h"
+#include "syntax.h"
 #include "util.h"
 
 extern char **environ;
@@ -93,7 +95,7 @@ const char *lang_current_name(void) {
   return active_language->name;
 }
 
-int lang_set(const char *name) {
+int lang_set(const char *name, int verbose) {
   const Language *language = find_language(name);
   if (language == NULL) {
     fprintf(stderr, "tarsh: lang: '%s' is not a language tarsh knows. try: bash, zsh, fish, sh\n", name);
@@ -105,7 +107,9 @@ int lang_set(const char *name) {
     return 1;
   }
   active_language = language;
-  printf("now using %s syntax for pipes, redirects, loops and scripts\n", name);
+  if (verbose) {
+    printf("now using %s for loops, functions and other %s syntax\n", name, name);
+  }
   return 0;
 }
 
@@ -119,89 +123,123 @@ void lang_list(void) {
   }
 }
 
-// Words that only make sense to a real shell interpreter when they start
-// a line: control flow, function definitions, and fish's builtins.
+// Words that start something only a real shell language can run.
 static const char *backend_keywords[] = {
-  "if", "for", "while", "until", "case", "function", "select", "time",
-  "source", ".", "alias", "unalias", "eval", "local", "declare",
-  "typeset", "readonly", "let", "[[", "!", "{",
-  "set", "begin", "switch", "and", "or", "not", "abbr", "funced",
+  "if", "then", "elif", "else", "fi", "for", "while", "until", "do", "done",
+  "case", "esac", "select", "function", "time", "coproc", "[[", "((", "!", "{", "}",
+  "local", "declare", "typeset", "readonly", "let", "eval", "trap", "set", "shopt",
+  // fish
+  "begin", "switch", "and", "or", "not", "end", "abbr", "funced", "funcsave",
   NULL
 };
 
-int lang_needs_backend(const char *line) {
-  // Check the first word against the keyword list.
-  const char *word = line;
-  while (*word == ' ' || *word == '\t') {
-    word++;
-  }
-  size_t word_length = strcspn(word, " \t");
+static int is_keyword(const char *word, size_t length) {
   for (int i = 0;backend_keywords[i] != NULL;i++) {
-    if (strlen(backend_keywords[i]) == word_length &&
-        strncmp(word, backend_keywords[i], word_length) == 0) {
+    if (strlen(backend_keywords[i]) == length && strncmp(word, backend_keywords[i], length) == 0) {
       return 1;
     }
   }
+  return 0;
+}
 
-  // `FOO=bar some-command` is a per-command assignment; bare `FOO=bar`
-  // is handled natively as an export.
-  const char *equals = memchr(word, '=', word_length);
-  if (equals != NULL && equals != word && word[word_length] != '\0') {
-    return 1;
-  }
-
+// Syntax inside one word that tarsh doesn't do natively: subshells and
+// fish command substitution (...), function definitions name(), $((math)),
+// brace expansion {a,b}, and ** in languages where it recurses.
+static int word_needs_backend(const char *word, size_t length) {
+  int recursive_glob = strcmp(active_language->name, "bash") != 0 &&
+                       strcmp(active_language->name, "sh") != 0;
   char quote = '\0';
-  int at_word_start = 1;
-  for (const char *c = line;*c != '\0';c++) {
+  for (size_t i = 0;i < length;i++) {
+    char c = word[i];
     if (quote == '\'') {
-      if (*c == '\'') {
-        quote = '\0';
-      }
+      if (c == '\'') quote = '\0';
       continue;
     }
-
-    if (*c == '\\') {
-      if (c[1] != '\0') {
-        c++;
-      }
-      at_word_start = 0;
+    if (c == '\\') {
+      i++;
       continue;
     }
-
+    if (c == '$' && word[i + 1] == '(' && word[i + 2] == '(') {
+      return 1;
+    }
+    if (c == '$' && word[i + 1] == '(') {
+      // Native $(...): skip over it; its contents are checked when it runs.
+      int unterminated = 0;
+      i = syntax_subst_end(word, i, &unterminated) - 1;
+      continue;
+    }
+    if (c == '$' && word[i + 1] == '{') {
+      // Native ${NAME}: skip to the closing brace.
+      while (i < length && word[i] != '}') i++;
+      continue;
+    }
     if (quote == '"') {
-      if (*c == '"') {
-        quote = '\0';
-      }
-      else if (*c == '`' || (*c == '$' && c[1] == '(')) {
-        return 1;
-      }
+      if (c == '"') quote = '\0';
       continue;
     }
-
-    if (*c == '\'' || *c == '"') {
-      quote = *c;
-      at_word_start = 0;
+    if (c == '\'' || c == '"') {
+      quote = c;
       continue;
     }
+    if (c == '(' || c == ')' || c == '{' || c == '}') {
+      return 1;
+    }
+    if (recursive_glob && c == '*' && word[i + 1] == '*') {
+      return 1;
+    }
+  }
+  return 0;
+}
 
-    // $? is expanded natively with tarsh's own last status.
-    if (*c == '$' && c[1] == '?') {
-      c++;
-      at_word_start = 0;
+int lang_needs_backend(const char *line) {
+  int command_start = 1;
+  size_t i = 0;
+
+  while (line[i] != '\0') {
+    char c = line[i];
+    if (c == ' ' || c == '\t') {
+      i++;
       continue;
     }
-    if (strchr("|&;<>()`*?[{", *c) != NULL) {
-      return 1;
+    if (c == '\n' || c == ';' || c == '|' || (c == '&' && line[i + 1] != '>')) {
+      command_start = 1;
+      i += ((c == '&' || c == '|') && line[i + 1] == c) ? 2 : 1;
+      continue;
     }
-    if (*c == '$' && c[1] == '(') {
-      return 1;
+    if (c == '#') {
+      while (line[i] != '\0' && line[i] != '\n') i++;
+      continue;
     }
-    // A '#' starting a later word is a comment in every backend.
-    if (*c == '#' && at_word_start) {
+    if (c == '<' && line[i + 1] == '<') {
+      return 1;   // here-documents and here-strings
+    }
+    if ((c == '<' || c == '>') && line[i + 1] == '(') {
+      return 1;   // process substitution
+    }
+    if (c == '<' || c == '>' || c == '&') {
+      while (line[i] == '<' || line[i] == '>' || line[i] == '&') i++;
+      continue;
+    }
+    if (c == '(' || c == ')') {
       return 1;
     }
 
-    at_word_start = (*c == ' ' || *c == '\t');
+    int unterminated = 0;
+    size_t end = syntax_word_end(line, i, &unterminated);
+    if (end == i) {
+      i++;
+      continue;
+    }
+    if (command_start && is_keyword(line + i, end - i)) {
+      return 1;
+    }
+    if (word_needs_backend(line + i, end - i)) {
+      return 1;
+    }
+    // After NAME=value the next word is still the command.
+    const char *equals = memchr(line + i, '=', end - i);
+    command_start = (command_start && equals != NULL && equals != line + i);
+    i = end;
   }
   return 0;
 }
@@ -286,43 +324,71 @@ static void sync_environment(const char *env_file) {
   fclose(file);
 }
 
-int lang_run(const char *line) {
+static int run_in(const Language *language, const char *line) {
   char *cwd_file = make_temp_file();
   char *env_file = make_temp_file();
 
   if (cwd_file == NULL || env_file == NULL) {
     // Still run the command, just without syncing state back.
-    char *argv[] = { (char *)active_language->name, "-c", (char *)line, NULL };
+    char *argv[] = { (char *)language->name, "-c", (char *)line, NULL };
     free(cwd_file);
     free(env_file);
-    return spawn_and_wait(argv);
+    return jobs_run_argv(argv, line, NULL);
   }
 
-  size_t script_size = strlen(line) + strlen(active_language->epilogue) + 1;
+  size_t script_size = strlen(line) + strlen(language->epilogue) + 1;
   char *script = malloc(script_size);
   if (script == NULL) {
     free(cwd_file);
     free(env_file);
     return 1;
   }
-  snprintf(script, script_size, "%s%s", line, active_language->epilogue);
+  snprintf(script, script_size, "%s%s", line, language->epilogue);
 
   setenv("TARSH_CWD_FILE", cwd_file, 1);
   setenv("TARSH_ENV_FILE", env_file, 1);
 
-  char *argv[] = { (char *)active_language->name, "-c", script, NULL };
-  int status = spawn_and_wait(argv);
+  char *argv[] = { (char *)language->name, "-c", script, NULL };
+  int stopped = 0;
+  int status = jobs_run_argv(argv, line, &stopped);
 
   unsetenv("TARSH_CWD_FILE");
   unsetenv("TARSH_ENV_FILE");
 
-  sync_directory(cwd_file);
-  sync_environment(env_file);
-
-  unlink(cwd_file);
-  unlink(env_file);
+  // A job suspended with Ctrl+Z will still write these files when it
+  // finishes, so they stay; otherwise bring its cd/exports back.
+  if (!stopped) {
+    sync_directory(cwd_file);
+    sync_environment(env_file);
+    unlink(cwd_file);
+    unlink(env_file);
+  }
   free(cwd_file);
   free(env_file);
   free(script);
   return status;
+}
+
+int lang_run(const char *line) {
+  return run_in(active_language, line);
+}
+
+void lang_source_login_profiles(void) {
+  const Language *sh = find_language("sh");
+  const char *home = getenv("HOME");
+  char profile[PATH_MAX];
+
+  if (access("/etc/profile", R_OK) == 0) {
+    run_in(sh, ". /etc/profile");
+  }
+  if (home != NULL) {
+    snprintf(profile, sizeof(profile), "%s/.profile", home);
+    if (access(profile, R_OK) == 0) {
+      char *quoted = shell_quote(profile);
+      char line[PATH_MAX + 16];
+      snprintf(line, sizeof(line), ". %s", quoted ? quoted : profile);
+      free(quoted);
+      run_in(sh, line);
+    }
+  }
 }

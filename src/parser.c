@@ -62,12 +62,6 @@ static int is_token_space(char c) {
   return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-static int last_status = 0;
-
-void parser_set_last_status(int status) {
-  last_status = status;
-}
-
 // A small growable string for building one token at a time.
 typedef struct {
   char *data;
@@ -97,46 +91,7 @@ static void builder_char(Builder *builder, char c) {
   builder_push(builder, &c, 1);
 }
 
-static int is_name_char(char c, int first) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' ||
-         (!first && c >= '0' && c <= '9');
-}
-
-// Expands the variable reference starting at buffer[i] (which is '$').
-// Returns how many characters of the source were consumed.
-static size_t expand_variable(const char *buffer, size_t i, Builder *out) {
-  const char *start = buffer + i + 1;
-
-  if (*start == '?') {
-    char digits[16];
-    int written = snprintf(digits, sizeof(digits), "%d", last_status);
-    builder_push(out, digits, written);
-    return 2;
-  }
-
-  int braced = (*start == '{');
-  const char *name = braced ? start + 1 : start;
-  size_t name_length = 0;
-  while (is_name_char(name[name_length], name_length == 0)) {
-    name_length++;
-  }
-
-  if (name_length == 0 || (braced && name[name_length] != '}')) {
-    // Not a variable reference after all: keep the '$' literally.
-    builder_char(out, '$');
-    return 1;
-  }
-
-  char key[256];
-  snprintf(key, sizeof(key), "%.*s", (int)name_length, name);
-  const char *value = getenv(key);
-  if (value != NULL) {
-    builder_push(out, value, strlen(value));
-  }
-  return 1 + name_length + (braced ? 2 : 0);
-}
-
-static int tokenize(const char *buffer, ArgList *args, int expand) {
+static int tokenize(const char *buffer, ArgList *args) {
   arglist_reset(args);
 
   Builder token = { NULL, 0, 64 };
@@ -159,16 +114,6 @@ static int tokenize(const char *buffer, ArgList *args, int expand) {
     token.data[0] = '\0';
     char quote = '\0';
     int saw_quote = 0;
-
-    // ~ and ~/path expand to $HOME, but only unquoted at a word's start.
-    if (expand && buffer[i] == '~' &&
-        (i + 1 >= length || buffer[i + 1] == '/' || is_token_space(buffer[i + 1]))) {
-      const char *home = getenv("HOME");
-      if (home != NULL) {
-        builder_push(&token, home, strlen(home));
-        i++;
-      }
-    }
 
     while (i < length) {
       char c = buffer[i];
@@ -198,9 +143,6 @@ static int tokenize(const char *buffer, ArgList *args, int expand) {
           i += 2;
         }
       }
-      else if (expand && c == '$' && quote != '\'') {
-        i += expand_variable(buffer, i, &token);
-      }
       else {
         builder_char(&token, c);
         i++;
@@ -213,8 +155,6 @@ static int tokenize(const char *buffer, ArgList *args, int expand) {
       return -1;
     }
 
-    // An unquoted variable that expanded to nothing is not an argument,
-    // matching sh: `echo $UNSET x` passes one argument, not two.
     if (token.length == 0 && !saw_quote) {
       continue;
     }
@@ -231,10 +171,14 @@ static int tokenize(const char *buffer, ArgList *args, int expand) {
   return args->count;
 }
 
-int main_command_parser(const char *buffer, ArgList *args) {
-  return tokenize(buffer, args, 1);
+int parser_split_words(const char *buffer, ArgList *args) {
+  return tokenize(buffer, args);
 }
 
-int parser_split_words(const char *buffer, ArgList *args) {
-  return tokenize(buffer, args, 0);
+void arglist_append(ArgList *args, const char *text) {
+  char *copy = strdup(text);
+  if (copy == NULL) {
+    fatal_oom();
+  }
+  arglist_push(args, copy);
 }

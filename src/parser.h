@@ -13,18 +13,14 @@ void arglist_init(ArgList *args);
 void arglist_reset(ArgList *args);
 void arglist_free(ArgList *args);
 
-// Splits `buffer` into tokens. Whitespace separates tokens, single quotes
-// are literal, double quotes allow \" escapes, and a backslash outside
-// quotes escapes the next character. Outside single quotes $NAME, ${NAME}
-// and $? are expanded, and a leading ~ becomes $HOME. Returns the number
-// of tokens, or -1 on an unterminated quote.
-int main_command_parser(const char *buffer, ArgList *args);
+// Appends a copy of `text`.
+void arglist_append(ArgList *args, const char *text);
 
-// Same tokenizing rules, but no $ or ~ expansion. Used to inspect what
-// the user is still typing.
+// Splits `buffer` into words the way the user sees them: whitespace
+// separates words, quotes group them, a backslash escapes the next
+// character. Nothing is expanded. Used to inspect what the user is still
+// typing (e.g. for the fzf pickers). Returns the word count, or -1 inside
+// an unterminated quote.
 int parser_split_words(const char *buffer, ArgList *args);
-
-// The value $? expands to.
-void parser_set_last_status(int status);
 
 #endif

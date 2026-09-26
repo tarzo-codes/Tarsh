@@ -2,11 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <signal.h>
-#include <errno.h>
 #include <limits.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 
 #include "util.h"
 
@@ -104,48 +101,4 @@ char *shell_quote(const char *text) {
   *out++ = '\'';
   *out = '\0';
   return quoted;
-}
-
-int spawn_and_wait(char *const argv[]) {
-  pid_t pid = fork();
-
-  if (pid < 0) {
-    perror("tarsh: fork failed");
-    return 1;
-  }
-
-  if (pid == 0) {
-    // Child: the shell ignores these signals, but the command should not.
-    signal(SIGINT, SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
-
-    execvp(argv[0], argv);
-
-    // execvp() only returns on failure. Use the conventional statuses so
-    // scripts can tell "not found" from "found but not runnable".
-    int code = (errno == ENOENT) ? 127 : 126;
-    fprintf(stderr, "tarsh: %s: %s\n", argv[0], strerror(errno));
-    _exit(code);
-  }
-
-  int status = 0;
-  while (waitpid(pid, &status, 0) < 0) {
-    if (errno != EINTR) {
-      perror("tarsh: waitpid failed");
-      return 1;
-    }
-  }
-
-  if (WIFEXITED(status)) {
-    return WEXITSTATUS(status);
-  }
-  if (WIFSIGNALED(status)) {
-    int signal_number = WTERMSIG(status);
-    // Commands killed by Ctrl+C leave the cursor mid-line.
-    if (signal_number == SIGINT) {
-      printf("\n");
-    }
-    return 128 + signal_number;
-  }
-  return status;
 }
