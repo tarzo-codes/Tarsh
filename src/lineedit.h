@@ -22,6 +22,9 @@ void editbuf_delete_before(EditBuffer *line, size_t count);
 // Ctrl+D at an empty prompt.
 char *lineedit_read(const char *prompt);
 
+// Same, with `initial` already typed (used to pre-indent script blocks).
+char *lineedit_read_initial(const char *prompt, const char *initial);
+
 // History: loaded from and appended to ~/.config/tarsh/history.
 void lineedit_history_load(void);
 void lineedit_history_add(const char *line);

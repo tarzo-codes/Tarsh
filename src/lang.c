@@ -9,6 +9,7 @@
 #include "jobs.h"
 #include "syntax.h"
 #include "util.h"
+#include "parser.h"
 
 extern char **environ;
 
@@ -45,8 +46,15 @@ static const Language *active_language = &languages[0];
 // would be wrong or noisy.
 static const char *env_ignore[] = {
   "_", "SHLVL", "PWD", "OLDPWD", "TARSH_CWD_FILE", "TARSH_ENV_FILE",
-  "__tarsh_status", NULL
+  "__tarsh_status", "USER", "LOGNAME", "HOSTNAME", "SHELL", "COLUMNS", "LINES",
+  "PS1", "PS2", "PS4", NULL
 };
+
+// Variables shells set for their own bookkeeping (fish_*, BASH_*, ...).
+static int shell_internal(const char *name) {
+  return strncmp(name, "fish_", 5) == 0 || strncmp(name, "__fish", 6) == 0 ||
+         strncmp(name, "BASH", 4) == 0 || strncmp(name, "ZSH", 3) == 0;
+}
 
 static const Language *find_language(const char *name) {
   for (int i = 0;i < LANGUAGE_COUNT;i++) {
@@ -127,9 +135,10 @@ void lang_list(void) {
 static const char *backend_keywords[] = {
   "if", "then", "elif", "else", "fi", "for", "while", "until", "do", "done",
   "case", "esac", "select", "function", "time", "coproc", "[[", "((", "!", "{", "}",
-  "local", "declare", "typeset", "readonly", "let", "eval", "trap", "set", "shopt",
+  "local", "declare", "typeset", "readonly", "let", "eval", "trap", "shopt",
+  "setopt", "unsetopt", "autoload", "zmodload", "foreach", "repeat",
   // fish
-  "begin", "switch", "and", "or", "not", "end", "abbr", "funced", "funcsave",
+  "begin", "switch", "end",
   NULL
 };
 
@@ -264,6 +273,21 @@ static char *make_temp_file(void) {
   return path;
 }
 
+// What the last backend run changed in tarsh, for the explanation note.
+static char changed_directory[PATH_MAX];
+static ArgList changed_variables;
+static int changes_ready = 0;
+static int last_run_stopped = 0;
+
+static void reset_changes(void) {
+  if (!changes_ready) {
+    arglist_init(&changed_variables);
+    changes_ready = 1;
+  }
+  arglist_reset(&changed_variables);
+  changed_directory[0] = '\0';
+}
+
 static void sync_directory(const char *cwd_file) {
   FILE *file = fopen(cwd_file, "r");
   if (file == NULL) {
@@ -276,6 +300,7 @@ static void sync_directory(const char *cwd_file) {
     if (target[0] != '\0' && (getcwd(current, sizeof(current)) == NULL ||
                               strcmp(current, target) != 0)) {
       if (chdir(target) == 0) {
+        snprintf(changed_directory, sizeof(changed_directory), "%s", target);
         setenv("OLDPWD", current, 1);
         setenv("PWD", target, 1);
       }
@@ -312,12 +337,13 @@ static void sync_environment(const char *env_file) {
     *equals = '\0';
     const char *name = entry;
     const char *value = equals + 1;
-    if (env_ignored(name)) {
+    if (env_ignored(name) || shell_internal(name)) {
       continue;
     }
     const char *current = getenv(name);
     if (current == NULL || strcmp(current, value) != 0) {
       setenv(name, value, 1);
+      arglist_append(&changed_variables, name);
     }
   }
   free(entry);
@@ -350,6 +376,7 @@ static int run_in(const Language *language, const char *line) {
 
   char *argv[] = { (char *)language->name, "-c", script, NULL };
   int stopped = 0;
+  reset_changes();
   int status = jobs_run_argv(argv, line, &stopped);
 
   unsetenv("TARSH_CWD_FILE");
@@ -357,6 +384,7 @@ static int run_in(const Language *language, const char *line) {
 
   // A job suspended with Ctrl+Z will still write these files when it
   // finishes, so they stay; otherwise bring its cd/exports back.
+  last_run_stopped = stopped;
   if (!stopped) {
     sync_directory(cwd_file);
     sync_environment(env_file);
@@ -367,6 +395,41 @@ static int run_in(const Language *language, const char *line) {
   free(env_file);
   free(script);
   return status;
+}
+
+int lang_run_as(const char *name, const char *line) {
+  const Language *language = find_language(name);
+  if (language == NULL || !language_installed(language)) {
+    language = active_language;
+  }
+  return run_in(language, line);
+}
+
+int lang_installed(const char *name) {
+  const Language *language = find_language(name);
+  return language != NULL && language_installed(language);
+}
+
+const char *lang_install_hint(const char *name) {
+  const Language *language = find_language(name);
+  return language ? language->install_hint : "";
+}
+
+void lang_clear_changes(void) {
+  reset_changes();
+}
+
+int lang_last_stopped(void) {
+  return last_run_stopped;
+}
+
+const char *lang_last_directory(void) {
+  return changed_directory;
+}
+
+ArgList *lang_last_variables(void) {
+  if (!changes_ready) reset_changes();
+  return &changed_variables;
 }
 
 int lang_run(const char *line) {

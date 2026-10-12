@@ -11,10 +11,16 @@ int exec_run_line(const char *text);
 // last status. With `quiet_missing`, a missing file is not an error.
 int exec_run_file(const char *path, int quiet_missing);
 int exec_run_stream(FILE *input);
+int exec_run_stream_named(FILE *input, const char *origin);
+
+// Is `name` something that can run: a builtin, a script function (also
+// one waiting in ~/.config/tarsh/functions), or a program on $PATH?
+int exec_command_exists(const char *name);
 
 // Set by `exit`; the main loop and script runners stop when it is.
 int exec_should_exit(void);
 void exec_cancel_exit(void);
+void exec_request_exit(void);
 
 // True while an rc file or `source`d file is running.
 int exec_is_sourcing(void);

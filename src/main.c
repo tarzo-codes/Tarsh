@@ -15,6 +15,8 @@
 #include "prompts.h"
 #include "syntax.h"
 #include "theme.h"
+#include "script.h"
+#include "foreign.h"
 
 static double seconds_between(struct timespec start, struct timespec end) {
   return (double)(end.tv_sec - start.tv_sec) +
@@ -122,16 +124,53 @@ static int interactive_loop(void) {
       break;
     }
 
-    // Keep reading while the command is unfinished (open quote, trailing
-    // |, an if/for/while without its end...).
-    int fish = strcmp(lang_current_name(), "fish") == 0;
-    while (syntax_incomplete(line, fish)) {
-      char *more = lineedit_read("> ");
-      if (more == NULL) {
-        break;
+    int script_block = script_opens_block(line);
+    if (script_block) {
+      // A tarsh script block (if x:, for f in files:, def f():) goes on
+      // until an empty line, like Python's prompt. Each new line starts
+      // indented like the one before, one level deeper after a ':'.
+      lineedit_history_add(line);
+      char indent[256];
+      const char *last = line;
+      while (1) {
+        size_t width = strspn(last, " \t");
+        if (width > sizeof(indent) - 8) width = sizeof(indent) - 8;
+        memcpy(indent, last, width);
+        indent[width] = '\0';
+        size_t end = strlen(last);
+        while (end > 0 && last[end - 1] == ' ') end--;
+        if (end > 0 && last[end - 1] == ':') strcat(indent, "    ");
+
+        char *more = lineedit_read_initial("... ", indent);
+        if (more == NULL || more[strspn(more, " \t")] == '\0') {
+          free(more);
+          break;
+        }
+        lineedit_history_add(more);
+        size_t old_length = strlen(line);
+        char *joined = realloc(line, old_length + strlen(more) + 2);
+        if (joined == NULL) {
+          free(more);
+          break;
+        }
+        line = joined;
+        sprintf(line + old_length, "\n%s", more);
+        free(more);
+        last = strrchr(line, '\n') + 1;
       }
-      line = join_lines(line, more);
-      free(more);
+    }
+    else {
+      // Keep reading while the command is unfinished (open quote, trailing
+      // |, an if/for/while without its end...).
+      int fish = strcmp(lang_current_name(), "fish") == 0;
+      while (syntax_incomplete(line, fish)) {
+        char *more = lineedit_read("> ");
+        if (more == NULL) {
+          break;
+        }
+        line = join_lines(line, more);
+        free(more);
+      }
     }
 
     if (is_blank_or_comment(line)) {
@@ -139,10 +178,12 @@ static int interactive_loop(void) {
       continue;
     }
 
-    char *remembered = history_form(line);
-    if (remembered != NULL) {
-      lineedit_history_add(remembered);
-      free(remembered);
+    if (!script_block) {
+      char *remembered = history_form(line);
+      if (remembered != NULL) {
+        lineedit_history_add(remembered);
+        free(remembered);
+      }
     }
 
     struct timespec start;
@@ -212,8 +253,25 @@ int main(int argc, char *argv[]) {
 
   // `tarsh script.tsh args...`
   if (first_arg < argc) {
-    expand_set_positional(argc - first_arg, argv + first_arg);
+    Foreign foreign;
     jobs_init(0);
+    // `tarsh deploy.sh`: a bash/zsh/fish script runs in its own shell.
+    if (foreign_analyze_file(argv[first_arg], &foreign) && lang_installed(foreign.language)) {
+      int count = argc - first_arg;
+      char **command = calloc(count + 2, sizeof(char *));
+      if (command == NULL) {
+        return 1;
+      }
+      command[0] = foreign.language;
+      for (int i = 0;i < count;i++) command[i + 1] = argv[first_arg + i];
+      int status = jobs_run_argv(command, argv[first_arg], NULL);
+      free(command);
+      if (isatty(STDERR_FILENO) && foreign_enabled()) {
+        fprintf(stderr, "\x1b[2m\u21B3 tarsh %s.\x1b[0m\n", foreign.what);
+      }
+      return status;
+    }
+    expand_set_positional(argc - first_arg, argv + first_arg);
     int status = exec_run_file(argv[first_arg], 0);
     return status;
   }

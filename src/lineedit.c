@@ -252,6 +252,11 @@ const char *lineedit_history_get(int index) {
 // Key reading
 // ---------------------------------------------------------------------------
 
+static int input_pending(void) {
+  struct pollfd poller = { STDIN_FILENO, POLLIN, 0 };
+  return poll(&poller, 1, 0) > 0;
+}
+
 static int read_byte(char *out) {
   while (1) {
     ssize_t result = read(STDIN_FILENO, out, 1);
@@ -372,11 +377,16 @@ static void draw_prompt_head(const char *prompt, const char *tail) {
 }
 
 char *lineedit_read(const char *full_prompt) {
+  return lineedit_read_initial(full_prompt, "");
+}
+
+char *lineedit_read_initial(const char *full_prompt, const char *initial) {
   const char *last_newline = strrchr(full_prompt, '\n');
   const char *prompt = last_newline ? last_newline + 1 : full_prompt;
   EditBuffer line = { NULL, 0, 0, 0 };
   editbuf_reserve(&line, 0);
   line.data[0] = '\0';
+  editbuf_insert(&line, initial);
 
   // Browsing history: index into history, or history_count for the line
   // being typed. `draft` keeps that line while browsing.
@@ -568,7 +578,9 @@ char *lineedit_read(const char *full_prompt) {
       case ' ':
         // Space right after a command like `cd` or `nvim` opens a picker;
         // if the picker isn't wanted it falls through to a plain space.
-        if (line.cursor != line.length || !fzf_on_space(&line)) {
+        // Not while pasting or typing ahead: more keys already waiting
+        // means the path is on its way.
+        if (line.cursor != line.length || input_pending() || !fzf_on_space(&line)) {
           editbuf_insert(&line, " ");
         }
         break;

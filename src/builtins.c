@@ -17,6 +17,7 @@
 #include "theme.h"
 #include "theme_ui.h"
 #include "util.h"
+#include "foreign.h"
 
 extern char **environ;
 
@@ -27,7 +28,7 @@ static const char *builtin_names[] = {
   "cd", "pwd", "echo", "export", "unset", "alias", "unalias", "source", ".",
   "type", "read", "shift", "umask", "true", "false", ":",
   "jobs", "fg", "bg", "wait", "kill", "exec",
-  "lang", "history", "config", "import-rc", "theme", "help", "exit", NULL
+  "lang", "history", "config", "import-rc", "theme", "explain", "help", "exit", NULL
 };
 
 const char *builtin_name_at(int index) {
@@ -292,9 +293,19 @@ static int builtin_source(ArgList *args) {
     free(quoted);
     return 1;
   }
-  const char *keyword = strcmp(lang_current_name(), "sh") == 0 ? "." : "source";
+  Foreign foreign;
+  if (!foreign_analyze_file(path, &foreign) || !lang_installed(foreign.language)) {
+    snprintf(foreign.language, sizeof(foreign.language), "%s", lang_current_name());
+  }
+  const char *keyword = strcmp(foreign.language, "sh") == 0 ? "." : "source";
   snprintf(line, size, "%s %s", keyword, quoted ? quoted : path);
-  int status = lang_run(line);
+  int status = lang_run_as(foreign.language, line);
+  if (!lang_last_stopped()) {
+    snprintf(foreign.what, sizeof(foreign.what), "sourced %.120s: ran the file inside %s and copied back what it changed",
+             path, foreign.language);
+    foreign.tip[0] = '\0';
+    foreign_explain(&foreign, path);
+  }
   free(line);
   free(quoted);
   return status;
@@ -776,6 +787,18 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
   else if (strcmp(name, "config") == 0) *status = builtin_config(args);
   else if (strcmp(name, "import-rc") == 0) *status = builtin_import_rc();
   else if (strcmp(name, "theme") == 0) *status = builtin_theme(args);
+  else if (strcmp(name, "explain") == 0) {
+    if (args->count > 1 && (strcmp(args->items[1], "on") == 0 || strcmp(args->items[1], "off") == 0)) {
+      foreign_set_enabled(strcmp(args->items[1], "on") == 0);
+      printf("notes after bash/zsh/fish commands are %s (set EXPLAIN in config.t to keep it)\n",
+             foreign_enabled() ? "on" : "off");
+      *status = 0;
+    }
+    else {
+      printf("explain is %s. usage: explain on|off\n", foreign_enabled() ? "on" : "off");
+      *status = args->count > 1 ? 2 : 0;
+    }
+  }
   else if (strcmp(name, "help") == 0) *status = builtin_help();
   else if (strcmp(name, "exit") == 0) *status = builtin_exit(args, should_exit);
   else return 0;

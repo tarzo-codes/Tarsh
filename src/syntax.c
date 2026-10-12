@@ -577,10 +577,17 @@ int syntax_incomplete(const char *text, int fish) {
     pending_operator = 0;
 
     if (command_start) {
-      if (word_is(word, word_length, openers) || (fish && word_is(word, word_length, fish_openers))) {
+      // Lines can be bash or fish whatever `lang` says (tarsh detects
+      // which), so fish's begin/switch/function ... end count too. A
+      // bash `function f {` is closed by its `}`, so it isn't counted.
+      int fish_function = word_length == 8 && strncmp(word, "function", 8) == 0 &&
+                          strchr(text + end, '{') == NULL && strstr(text + end, "()") == NULL;
+      (void)fish;
+      if (word_is(word, word_length, openers) || fish_function ||
+          (word_is(word, word_length, fish_openers) && !(word_length == 8 && strncmp(word, "function", 8) == 0))) {
         depth++;
       }
-      else if (word_is(word, word_length, closers) || (fish && word_is(word, word_length, fish_closers))) {
+      else if (word_is(word, word_length, closers) || word_is(word, word_length, fish_closers)) {
         depth--;
       }
       command_start = word_is(word, word_length, leads_command);

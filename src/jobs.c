@@ -12,6 +12,7 @@
 #include "builtins.h"
 #include "expand.h"
 #include "suggest.h"
+#include "script.h"
 
 #define MAX_JOBS 64
 
@@ -373,6 +374,12 @@ static void child_run(ExpandedCommand *command, pid_t pgid, int background, int 
     fflush(stderr);
     _exit(status);
   }
+  else if (script_function_exists(argv[0])) {
+    int status = script_call_command(&command->argv);
+    fflush(stdout);
+    fflush(stderr);
+    _exit(status);
+  }
 
   execvp(argv[0], argv);
 
@@ -382,6 +389,9 @@ static void child_run(ExpandedCommand *command, pid_t pgid, int background, int 
     _exit(127);
   }
   fprintf(stderr, "tarsh: %s: %s\n", argv[0], strerror(saved_errno));
+  if (saved_errno == EACCES && access(argv[0], R_OK) == 0 && strchr(argv[0], '/') != NULL) {
+    fprintf(stderr, "  it isn't marked as runnable. make it runnable with: chmod +x %s\n", argv[0]);
+  }
   _exit(saved_errno == ENOENT ? 127 : 126);
 }
 

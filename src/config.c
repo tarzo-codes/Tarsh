@@ -10,6 +10,7 @@
 #include "prompts.h"
 #include "fzf.h"
 #include "lang.h"
+#include "foreign.h"
 
 static char config_dir[PATH_MAX];
 static char settings_path[PATH_MAX + 16];
@@ -56,6 +57,8 @@ static void write_default_config(const char *config_path) {
   fzf_write_defaults(file);
   fprintf(file, "\n");
   lang_write_defaults(file);
+  fprintf(file, "\n");
+  foreign_write_defaults(file);
   fclose(file);
 }
 
@@ -88,6 +91,9 @@ static void apply_config_line(char *line) {
     return;
   }
   if (lang_configure(key, value)) {
+    return;
+  }
+  if (foreign_configure(key, value)) {
     return;
   }
   fprintf(stderr, "tarsh: config: unknown setting '%s' (ignored)\n", key);

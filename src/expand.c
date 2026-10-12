@@ -10,6 +10,7 @@
 #include "exec.h"
 #include "jobs.h"
 #include "lang.h"
+#include "script.h"
 #include "syntax.h"
 
 // Every character of a word being built carries flags saying where it
@@ -60,6 +61,11 @@ void expand_set_positional(int count, char **args) {
     positional[i] = strdup(args[i]);
   }
   positional_count = count;
+}
+
+char **expand_positional(int *count) {
+  *count = positional_count;
+  return positional;
 }
 
 int expand_shift(int n) {
@@ -152,9 +158,11 @@ char *expand_capture(const char *command) {
   }
   close(fds[0]);
 
-  int status;
+  int status = 0;
   while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
   }
+  // $? / status after out = $(cmd) is cmd's status.
+  last_status = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 
   if (output == NULL) {
     return strdup("");
@@ -179,15 +187,63 @@ static void add_positional_joined(Field *field, unsigned char flag) {
   }
 }
 
-static const char *lookup_variable(const char *name) {
-  const char *value = getenv(name);
-  // fish users expect $status; give them tarsh's last status.
-  if (value == NULL && strcmp(name, "status") == 0 && strcmp(lang_current_name(), "fish") == 0) {
-    static char digits[16];
-    snprintf(digits, sizeof(digits), "%d", last_status);
-    return digits;
+// Separates the items of a list variable inside a field being built.
+#define LIST_SEPARATOR '\x1f'
+
+// A variable's value as text: shell variables first, then the
+// environment, then $status. Returns malloc'd text or NULL if unset.
+static char *variable_text(const char *name) {
+  char *text = NULL;
+  if (script_var_get(name, &text, NULL) == 1) {
+    return text;
   }
-  return value;
+  const char *value = getenv(name);
+  if (value != NULL) {
+    return strdup(value);
+  }
+  if (strcmp(name, "status") == 0) {
+    char digits[16];
+    snprintf(digits, sizeof(digits), "%d", last_status);
+    return strdup(digits);
+  }
+  if (strcmp(name, "argv") == 0) {
+    Field joined = { NULL, NULL, 0, 0 };
+    field_add(&joined, "", 0, 0);
+    add_positional_joined(&joined, 0);
+    free(joined.flags);
+    return joined.text;
+  }
+  return NULL;
+}
+
+// Adds $name. An unquoted list (files = ["a b", "c"]) becomes one word
+// per item, without splitting the items themselves.
+static void add_variable(Field *field, const char *name, unsigned char flag) {
+  ArgList list;
+  arglist_init(&list);
+  char *text = NULL;
+  int kind = script_var_get(name, &text, &list);
+  if (kind == 0 && strcmp(name, "argv") == 0 && getenv("argv") == NULL) {
+    for (int i = 1;i < positional_count;i++) arglist_append(&list, positional[i]);
+    kind = 2;
+  }
+  if (kind == 2) {
+    for (int i = 0;i < list.count;i++) {
+      if (i > 0) {
+        if (flag == FROM_EXPANSION) field_add(field, "\x1f", 1, FROM_EXPANSION);
+        else field_add(field, " ", 1, flag);
+      }
+      field_add_string(field, list.items[i], flag == FROM_EXPANSION ? FROM_QUOTES : flag);
+    }
+  }
+  else {
+    if (kind == 0) {
+      text = variable_text(name);
+    }
+    field_add_string(field, text, flag);
+  }
+  free(text);
+  arglist_free(&list);
 }
 
 // Expands the $... or `...` at raw[i]; returns the index after it.
@@ -236,11 +292,14 @@ static size_t expand_dollar(const char *raw, size_t i, Field *field, unsigned ch
       *fallback = '\0';
       fallback += 2;
     }
-    const char *value = lookup_variable(inside);
-    if (value == NULL || value[0] == '\0') {
-      value = fallback;
+    char *value = variable_text(inside);
+    if (fallback == NULL && value == NULL) {
+      add_variable(field, inside, flag);
     }
-    field_add_string(field, value, flag);
+    else {
+      field_add_string(field, (value == NULL || value[0] == '\0') ? fallback : value, flag);
+    }
+    free(value);
     free(inside);
     return (close - raw) + 1;
   }
@@ -291,7 +350,7 @@ static size_t expand_dollar(const char *raw, size_t i, Field *field, unsigned ch
     return i + 1;
   }
   char *name = strndup(raw + i + 1, length);
-  field_add_string(field, lookup_variable(name), flag);
+  add_variable(field, name, flag);
   free(name);
   return i + 1 + length;
 }
@@ -445,7 +504,8 @@ void expand_word(const char *raw, ArgList *out) {
   for (size_t i = 0;i <= field.length;i++) {
     int boundary = (i == field.length) ||
                    ((field.flags[i] & FROM_EXPANSION) &&
-                    (field.text[i] == ' ' || field.text[i] == '\t' || field.text[i] == '\n'));
+                    (field.text[i] == ' ' || field.text[i] == '\t' || field.text[i] == '\n' ||
+                     field.text[i] == LIST_SEPARATOR));
     if (!boundary) {
       continue;
     }

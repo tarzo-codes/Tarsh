@@ -29,6 +29,9 @@ void expand_set_last_background(pid_t pid);
 
 // $0 $1 ... for scripts and `tarsh -c`. args[0] is $0.
 void expand_set_positional(int count, char **args);
+// The positional arguments; [0] is $0.
+char **expand_positional(int *count);
+
 // Drops $1..$n (the `shift` builtin). Returns nonzero if there weren't n.
 int expand_shift(int n);
 

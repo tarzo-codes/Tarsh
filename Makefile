@@ -3,6 +3,7 @@ CFLAGS  ?= -std=gnu11 -Wall -Wextra -O2
 SRC     := $(wildcard src/*.c)
 TARGET  := tarsh
 PREFIX  ?= /usr/local
+LDLIBS  ?= -lm
 
 # The theme editor page is compiled into the binary.
 EDITOR_PAGE   := ui/theme-editor.html
@@ -14,7 +15,7 @@ EMBED         := build/embed
 all: $(TARGET)
 
 $(TARGET): $(SRC) $(wildcard src/*.h) $(EDITOR_HEADER)
-	$(CC) $(CFLAGS) $(SRC) -o $@
+	$(CC) $(CFLAGS) $(SRC) -o $@ $(LDLIBS)
 
 $(EMBED): tools/embed.c
 	@mkdir -p build

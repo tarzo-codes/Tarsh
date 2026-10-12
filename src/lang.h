@@ -30,6 +30,19 @@ int lang_needs_backend(const char *line);
 // back into tarsh afterwards.
 int lang_run(const char *line);
 
+// Runs `line` in a specific language (falls back to the active one if
+// that isn't installed).
+int lang_run_as(const char *name, const char *line);
+int lang_installed(const char *name);
+const char *lang_install_hint(const char *name);
+
+// What the last backend run brought back into tarsh.
+int lang_last_stopped(void);
+void lang_clear_changes(void);
+const char *lang_last_directory(void);      // "" if the folder didn't change
+#include "parser.h"
+ArgList *lang_last_variables(void);
+
 // Login shells: runs /etc/profile and ~/.profile through sh and keeps the
 // variables they set (PATH and friends).
 void lang_source_login_profiles(void);
