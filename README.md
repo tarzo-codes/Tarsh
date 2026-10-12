@@ -31,6 +31,8 @@ Full instructions, options, making it your login shell, updating and uninstallin
 
 **Typing less (from fish).** Grey **autosuggestions** from history; **syntax highlighting** as you type (unknown commands show red); ↑ searches for what you've typed; **abbreviations** (`abbr gco git checkout`); `set -U` **universal variables** shared between terminals; folder history (`prevd`, `nextd`, `cdh`, Alt+←/→); typing a folder path goes there; `string`, `math`, `count`, `contains`, `random`, `and`/`or`/`not`; variables are never split at spaces.
 
+**See what a command will do.** As you type a `|` / `>>` / `<<` chain, a line under the prompt explains every step and the output to expect. Regexes are explained in words. For commands you list (grep, awk, sed, jq, ...), a **live preview** shows the real output as you type, in a sandbox that can't change files or touch the network. grep matches are highlighted, so it doubles as a regex tester. `explain 'LINE'` prints the full breakdown.
+
 **A real shell.** Pipes, all the redirections, `&&` `||` `;` `&`, wildcards, `$(...)`, aliases, Ctrl+Z / `fg` / `bg` / `jobs`, multi-line input, scripts, `-c`, login shells.
 
 **tarsh script.** A small language that reads like Python but treats every other line as a command. `$var` works in commands, `$(cmd)` captures output, `?(cmd)` tests success, and functions you `def` run like commands (`funcsave` keeps them). Guide: **[docs/SCRIPTING.md](docs/SCRIPTING.md)**.
@@ -72,6 +74,7 @@ make debug      # build with address/undefined-behaviour sanitizers
 | `src/lineedit.c`, `src/highlight.c` | the line editor: suggestions, highlighting, history, keys |
 | `src/fish.c` | abbr, set, universal variables, string/math/..., folder history, saved functions |
 | `src/fzf.c`, `src/complete.c` | pickers and completion (with option descriptions) |
+| `src/pipehint.c`, `src/live.c` | explaining pipelines and regexes; the sandboxed live preview |
 | `src/theme.c`, `src/theme_ui.c`, `ui/` | prompt themes and the browser theme editor |
 | `src/builtins.c`, `src/alias.c`, `src/suggest.c` | builtins, aliases, "did you mean" |
 | `src/config.c`, `src/prompts.c`, `src/util.c`, `src/parser.c` | settings, classic prompt, helpers |

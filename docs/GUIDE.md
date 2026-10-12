@@ -6,12 +6,13 @@ A hands-on tour. Open tarsh and try things as you read. Nothing here can break a
 - [2. Finding files without typing paths](#2-finding-files-without-typing-paths)
 - [3. Typing less](#3-typing-less)
 - [4. Combining commands](#4-combining-commands)
-- [5. Running programs](#5-running-programs)
-- [6. Variables](#6-variables)
-- [7. tarsh script](#7-tarsh-script)
-- [8. Commands from bash, zsh and fish](#8-commands-from-bash-zsh-and-fish)
-- [9. Making tarsh yours](#9-making-tarsh-yours)
-- [10. Cheat sheet](#10-cheat-sheet)
+- [5. Seeing what a command will do](#5-seeing-what-a-command-will-do)
+- [6. Running programs](#6-running-programs)
+- [7. Variables](#7-variables)
+- [8. tarsh script](#8-tarsh-script)
+- [9. Commands from bash, zsh and fish](#9-commands-from-bash-zsh-and-fish)
+- [10. Making tarsh yours](#10-making-tarsh-yours)
+- [11. Cheat sheet](#11-cheat-sheet)
 
 ---
 
@@ -106,7 +107,50 @@ Put abbreviations and aliases in your startup file (`config`) to keep them.
 
 fish's style works too: `make; and echo built`, `test -f x; or echo missing`, `not grep -q TODO notes.txt`.
 
-## 5. Running programs
+## 5. Seeing what a command will do
+
+Long chains of `|`, `>>` and `<<` are hard to read. As you type one, tarsh explains it under the prompt, step by step, and says what you'll get at the end. Nothing is run to do this:
+
+```
+$ ps aux | grep -i nginx | awk '{print $2}' | sort -n >> pids.txt
+  ↳ ps: lists running programs → grep: keeps lines matching /nginx/, ignoring case
+    → awk: prints column 2 → sort: sorts the lines as numbers, adds the output to the end of pids.txt
+    ⇒ added to the end of pids.txt (nothing on screen)
+```
+
+**Live preview.** When every command in the line is one you've listed in `LIVE_COMMANDS` (grep, awk, sed, cut, sort, uniq, head, tail, wc, tr, jq and a few more by default), tarsh also runs it as you type and shows the first lines of real output. It runs when you pause, so typing stays fast. For grep, the matches are **highlighted**, which makes it a live regex tester:
+
+```
+$ grep -E '(ada|grace)' people.csv
+  ▸ live: 2 lines
+  │ 1,ada,london
+  │ 3,grace,new york
+```
+
+The preview runs in a **sandbox**: it can't create, change, delete or move files, use the network, signal other programs or reach your terminal, and it's stopped after a second. A mistyped command, or an awk program that calls `system("rm …")`, can't do anything harmful. Lines that write files (`>`, `>>`, `sed -i`, `sort -o`, `find -delete`), chain several commands (`;`, `&&`) or use `$(…)` are only explained, never previewed.
+
+**`explain`** prints the full breakdown, including what each regex means, any time:
+
+```
+$ explain grep -E '^[0-9]{3}-[0-9]{4}$' phones.txt
+1. grep -E '^[0-9]{3}-[0-9]{4}$' phones.txt
+     keeps lines matching /^[0-9]{3}-[0-9]{4}$/ in phones.txt
+     /^[0-9]{3}-[0-9]{4}$/ means: the line starts, then exactly 3 digits, then "-", then exactly 4 digits, then the line ends
+result: the matching lines
+```
+
+| command | does |
+| --- | --- |
+| `explain 'LINE'` | the step-by-step breakdown of a command line |
+| `live` | show the preview settings and the previewed commands |
+| `live on` / `live off` | turn the live preview on or off for this session |
+| `live add jq` / `live remove ls` | change which commands are previewed (this session) |
+| `live test 'LINE'` | run the preview once and print it |
+| `hints on` / `hints off` | the explanation under the prompt |
+
+To keep changes, set `HINTS`, `LIVE`, `LIVE_COMMANDS`, `LIVE_LINES` and `LIVE_DELAY` in `config settings` (see [CUSTOMIZING.md](CUSTOMIZING.md)).
+
+## 6. Running programs
 
 | key / command | what it does |
 | --- | --- |
@@ -121,7 +165,7 @@ fish's style works too: `make; and echo built`, `test -f x; or echo missing`, `n
 
 When a background program finishes, tarsh tells you at the next prompt.
 
-## 6. Variables
+## 7. Variables
 
 ```
 $ name=world              # a variable for this shell
@@ -134,7 +178,7 @@ $ set -U THEME_COLOR teal # universal: saved, and shared by every open tarsh
 
 Like fish, tarsh **never splits a variable at spaces**. If `f="my file.txt"`, then `rm $f` removes one file named `my file.txt`, not two files called `my` and `file.txt`. Lists are how you pass several arguments.
 
-## 7. tarsh script
+## 8. tarsh script
 
 tarsh has its own little language, for when a few commands aren't enough. It reads like Python, but any line that isn't a statement is just a command:
 
@@ -159,7 +203,7 @@ print(greet)     # ...and are values too
 
 `funcsave greet` keeps a function for good; it loads by itself next time you use it. The full language is in **[SCRIPTING.md](SCRIPTING.md)**.
 
-## 8. Commands from bash, zsh and fish
+## 9. Commands from bash, zsh and fish
 
 Found a command online written for bash? Just paste it. tarsh recognises bash, zsh and fish syntax, runs it in that shell, and tells you what happened in one line:
 
@@ -179,7 +223,7 @@ If the command changes folder or sets exported variables, those changes come bac
 
 Scripts work too. A script with a `#!` line runs as usual, and one without (`./setup.sh`) is run by the right shell, with a note. `explain off` hides the notes.
 
-## 9. Making tarsh yours
+## 10. Making tarsh yours
 
 | command | what it opens |
 | --- | --- |
@@ -192,7 +236,7 @@ Scripts work too. A script with a `#!` line runs as usual, and one without (`./s
 
 tarsh doesn't read `~/.bashrc`. Your settings live in `~/.config/tarsh/`, and `import-rc` brings the useful parts over. Everything about settings and themes is in **[CUSTOMIZING.md](CUSTOMIZING.md)**.
 
-## 10. Cheat sheet
+## 11. Cheat sheet
 
 ```
 cd + space        pick a folder          Tab           complete / pick
@@ -203,5 +247,5 @@ Ctrl+C            stop                   Ctrl+Z        pause (fg / bg)
 Ctrl+A / Ctrl+E   start / end of line    Ctrl+W        delete a word
 Ctrl+L            clear the screen       Ctrl+D        exit
 
-help · tarsh doctor · config · theme edit · lang · history · jobs · abbr · set · man tarsh
+help · explain 'LINE' · live · tarsh doctor · config · theme edit · lang · history · jobs · abbr · set
 ```

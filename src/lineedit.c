@@ -13,6 +13,9 @@
 #include "complete.h"
 #include "fish.h"
 #include "highlight.h"
+#include "live.h"
+#include "pipehint.h"
+#include <sys/ioctl.h>
 #include "parser.h"
 #include "util.h"
 
@@ -169,32 +172,232 @@ static size_t display_width(const char *text, size_t length) {
 // Drawing
 // ---------------------------------------------------------------------------
 
-// Draws the prompt and the line (highlighted), plus the grey
-// autosuggestion after the cursor when there is one.
+// ---------------------------------------------------------------------------
+// Below the line: the pipeline hint and the live preview
+// ---------------------------------------------------------------------------
+
+static char *preview_text = NULL;     // last preview output
+static char *preview_for = NULL;      // the line it belongs to
+static int preview_total = 0;
+static int preview_failed = 0;
+static int below_off = 0;             // set while finishing a line
+
+static void preview_clear(void) {
+  free(preview_text);
+  free(preview_for);
+  preview_text = NULL;
+  preview_for = NULL;
+}
+
+static int terminal_width(void) {
+  struct winsize size;
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) == 0 && size.ws_col > 10) return size.ws_col;
+  return 80;
+}
+
+// Copies `text` into `out`, keeping color codes, stopping after `width`
+// visible columns (tabs become spaces).
+static void clip(const char *text, int width, char *out, size_t size) {
+  size_t used = 0;
+  int columns = 0;
+  for (size_t i = 0;text[i] && used < size - 16;i++) {
+    if (text[i] == '\x1b' && text[i + 1] == '[') {
+      size_t j = i + 2;
+      while (text[j] && text[j] != 'm') j++;
+      if (!text[j]) break;
+      memcpy(out + used, text + i, j - i + 1);
+      used += j - i + 1;
+      i = j;
+      continue;
+    }
+    if (((unsigned char)text[i] & 0xC0) != 0x80) {
+      if (columns >= width) break;
+      columns++;
+    }
+    out[used++] = text[i] == '\t' ? ' ' : text[i];
+  }
+  memcpy(out + used, "\x1b[0m", 5);
+  out[used + 4] = '\0';
+}
+
+#define MAX_BELOW 40
+
+// The lines to show under the input line. Returns how many.
+static int compose_below(const EditBuffer *line, char below[][1024]) {
+  if (below_off || line->length == 0) return 0;
+  int count = 0;
+  int width = terminal_width() - 3;
+
+  if (live_hints_enabled()) {
+    char *hint = pipehint_summary(line->data);
+    if (hint) {
+      // Wrap at the arrows so every step, and the expected output at the
+      // end, stays readable (up to 6 lines).
+      char row[2048];
+      size_t row_used = 0;
+      int row_columns = 0;
+      int lines_used = 0;
+      const char *cursor = hint;
+      row_used = snprintf(row, sizeof(row), "\x1b[2m\u21B3 ");
+      row_columns = 2;
+      while (*cursor && lines_used < 6) {
+        // Next piece: up to (and including) the next arrow, or the rest.
+        const char *arrow = strstr(cursor + 1, " \u2192 ");
+        const char *result = strstr(cursor + 1, "  \u21D2 ");
+        const char *end = arrow;
+        if (result && (!end || result < end)) end = result;
+        size_t length = end ? (size_t)(end - cursor) : strlen(cursor);
+        int piece_columns = (int)display_width(cursor, length);
+        if (row_columns + piece_columns > width && row_columns > 2) {
+          clip(row, width, below[count++], 1024);
+          lines_used++;
+          row_used = snprintf(row, sizeof(row), "\x1b[2m  ");
+          row_columns = 2;
+          while (*cursor == ' ') { cursor++; length--; }
+          piece_columns = (int)display_width(cursor, length);
+        }
+        if (row_used + length < sizeof(row) - 16) {
+          memcpy(row + row_used, cursor, length);
+          row_used += length;
+          row[row_used] = '\0';
+          row_columns += piece_columns;
+        }
+        cursor += length;
+      }
+      if (row_columns > 2 && lines_used < 6) clip(row, width, below[count++], 1024);
+      free(hint);
+    }
+  }
+
+  if (preview_text != NULL && preview_for != NULL) {
+    char header[256];
+    int shown = 0;
+    for (const char *c = preview_text;*c;c++) if (*c == '\n') shown++;
+    if (preview_text[0] && preview_text[strlen(preview_text) - 1] != '\n') shown++;
+    int stale = strcmp(preview_for, line->data) != 0;
+    if (preview_failed) snprintf(header, sizeof(header), "\x1b[2;33m\u25B8 live%s:\x1b[0m", stale ? " (updating)" : "");
+    else if (preview_total == 0) snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: no output\x1b[0m", stale ? " (updating)" : "");
+    else if (preview_total > shown) snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: first %d of %s%d lines\x1b[0m", stale ? " (updating)" : "", shown, preview_total > 60 ? "more than " : "", preview_total > 60 ? 50 : preview_total);
+    else snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: %d line%s\x1b[0m", stale ? " (updating)" : "", shown, shown == 1 ? "" : "s");
+    clip(header, width, below[count++], 1024);
+
+    const char *cursor = preview_text;
+    while (*cursor && count < MAX_BELOW) {
+      size_t length = strcspn(cursor, "\n");
+      char row[2048];
+      snprintf(row, sizeof(row), "%s\u2502 %.*s", preview_failed ? "\x1b[33m" : "\x1b[2m\x1b[0m", (int)(length < 1900 ? length : 1900), cursor);
+      clip(row, width, below[count++], 1024);
+      cursor += length;
+      if (*cursor == '\n') cursor++;
+    }
+  }
+  return count;
+}
+
+// Decides whether the line has a fresh preview coming.
+static int preview_wanted(const EditBuffer *line) {
+  if (!live_enabled() || line->length == 0) {
+    return 0;
+  }
+  if (!live_eligible(line->data, NULL, 0)) {
+    preview_clear();
+    return 0;
+  }
+  // A lone echo/ls/cat shows nothing you won't see anyway; previews are
+  // for pipelines and for commands that filter or transform.
+  if (strchr(line->data, '|') == NULL) {
+    static const char *plain[] = { "echo", "printf", "cat", "ls", "seq", NULL };
+    size_t word = strspn(line->data, " ");
+    size_t length = strcspn(line->data + word, " ");
+    for (int i = 0;plain[i];i++) {
+      if (strlen(plain[i]) == length && strncmp(line->data + word, plain[i], length) == 0) {
+        preview_clear();
+        return 0;
+      }
+    }
+  }
+  return preview_for == NULL || strcmp(preview_for, line->data) != 0;
+}
+
+static void preview_update(const EditBuffer *line) {
+  int total = 0, failed = 0;
+  char *output = live_run(line->data, live_lines(), &total, &failed);
+  free(preview_text);
+  free(preview_for);
+  preview_text = output ? output : strdup("(couldn't run the preview)");
+  preview_for = strdup(line->data);
+  preview_total = total;
+  preview_failed = failed || output == NULL;
+}
+
+// Which row of the input (counting from the prompt's row) the cursor was
+// left on by the last redraw, so the next one can start from the top even
+// when the line has wrapped onto several rows.
+static int cursor_row = 0;
+
+// Draws the prompt and the line (highlighted, possibly wrapping over
+// several rows), the grey autosuggestion, and the hint/preview below.
 static void refresh_line_with(const char *prompt, const EditBuffer *line, const char *suggestion) {
   char *shown = highlighting ? highlight_line(line->data) : NULL;
   const char *body = shown ? shown : line->data;
   if (suggestion == NULL || line->cursor != line->length) {
     suggestion = "";
   }
+  int columns = terminal_width();
 
-  size_t frame_size = strlen(prompt) + strlen(body) + strlen(suggestion) + 64;
+  static char below[MAX_BELOW][1024];
+  int below_count = compose_below(line, below);
+  size_t frame_size = strlen(prompt) + strlen(body) + strlen(suggestion) + 256;
+  for (int i = 0;i < below_count;i++) frame_size += strlen(below[i]) + 8;
   char *frame = malloc(frame_size);
   if (frame == NULL) {
     free(shown);
     return;
   }
 
-  int used = snprintf(frame, frame_size, "\r%s%s", prompt, body);
+  size_t prompt_width = display_width(prompt, strlen(prompt));
+  size_t total = prompt_width + display_width(line->data, line->length) + display_width(suggestion, strlen(suggestion));
+  size_t cursor_at = prompt_width + display_width(line->data, line->cursor);
+
+  int used = 0;
+  // Back to the prompt's first row, and clear everything from there down.
+  if (cursor_row > 0) {
+    used += snprintf(frame + used, frame_size - used, "\x1b[%dA", cursor_row);
+  }
+  used += snprintf(frame + used, frame_size - used, "\r\x1b[J%s%s", prompt, body);
   if (suggestion[0]) {
     used += snprintf(frame + used, frame_size - used, "\x1b[90m%s\x1b[0m", suggestion);
   }
-  used += snprintf(frame + used, frame_size - used, "\x1b[K");
-  size_t tail = display_width(line->data + line->cursor, line->length - line->cursor) +
-                display_width(suggestion, strlen(suggestion));
-  if (tail > 0) {
-    used += snprintf(frame + used, frame_size - used, "\x1b[%zuD", tail);
+  // Exactly filling the last row leaves the terminal waiting to wrap;
+  // move down so the arithmetic below holds.
+  int end_row = (int)(total / columns);
+  if (total > 0 && total % columns == 0) {
+    used += snprintf(frame + used, frame_size - used, "\n\r");
   }
+  int row = end_row;
+
+  if (below_count > 0) {
+    // Make room first so drawing below never scrolls the screen under us,
+    // then come back up and draw.
+    for (int i = 0;i < below_count;i++) frame[used++] = '\n';
+    used += snprintf(frame + used, frame_size - used, "\x1b[%dA", below_count);
+    for (int i = 0;i < below_count;i++) {
+      used += snprintf(frame + used, frame_size - used, "\n\r  %s", below[i]);
+    }
+    row = end_row + below_count;
+  }
+
+  // Put the cursor where it belongs.
+  int target_row = (int)(cursor_at / columns);
+  int target_column = (int)(cursor_at % columns);
+  if (row > target_row) {
+    used += snprintf(frame + used, frame_size - used, "\x1b[%dA", row - target_row);
+  }
+  used += snprintf(frame + used, frame_size - used, "\r");
+  if (target_column > 0) {
+    used += snprintf(frame + used, frame_size - used, "\x1b[%dC", target_column);
+  }
+  cursor_row = target_row;
 
   if (write(STDOUT_FILENO, frame, used) < 0) {
     // Nothing useful to do if the terminal went away.
@@ -576,7 +779,21 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
   draw_prompt_head(full_prompt, prompt);
   refresh_line(prompt, &line);
 
+  int preview_pending = 0;
+  below_off = 0;
+  cursor_row = 0;
+  preview_clear();
+
   while (1) {
+    // After a pause in typing, refresh the live preview.
+    if (preview_pending) {
+      struct pollfd poller = { STDIN_FILENO, POLLIN, 0 };
+      if (poll(&poller, 1, live_delay_ms()) == 0) {
+        preview_update(&line);
+        preview_pending = 0;
+        refresh_line_with(prompt, &line, suggestion_for(&line));
+      }
+    }
     char key;
     if (!read_byte(&key)) {
       // Input closed underneath us: treat it like Ctrl+D.
@@ -589,7 +806,10 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
 
     if (key == '\r' || key == '\n') {
       expand_abbreviation(&line);
+      // The hint and preview go away before the command runs.
+      below_off = 1;
       refresh_line(prompt, &line);
+      preview_clear();
       break;
     }
 
@@ -602,6 +822,12 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
     switch (key) {
       case KEY_CTRL('c'):
         // Abandon the line, like bash.
+        below_off = 1;
+        line.cursor = line.length;
+        refresh_line(prompt, &line);
+        below_off = 0;
+        preview_clear();
+        cursor_row = 0;
         if (write(STDOUT_FILENO, "^C\r\n", 4) < 0) {}
         draw_prompt_head(full_prompt, prompt);
         line.length = 0;
@@ -612,6 +838,7 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
 
       case KEY_CTRL('d'):
         if (line.length == 0) {
+          preview_clear();
           lineedit_raw_off();
           free(line.data);
           free(draft);
@@ -669,6 +896,7 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
 
       case KEY_CTRL('l'):
         if (write(STDOUT_FILENO, "\x1b[H\x1b[2J", 7) < 0) {}
+        cursor_row = 0;
         draw_prompt_head(full_prompt, prompt);
         break;
 
@@ -835,10 +1063,24 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
         break;
     }
 
+    preview_pending = preview_wanted(&line);
     refresh_line_with(prompt, &line, suggestion_for(&line));
   }
 
+  // Leave the cursor after the last row of the input.
+  {
+    size_t total = display_width(prompt, strlen(prompt)) + display_width(line.data, line.length);
+    int last_row = (int)(total / terminal_width());
+    if (total > 0 && total % terminal_width() == 0) last_row--;
+    if (last_row > cursor_row) {
+      char move[32];
+      int n = snprintf(move, sizeof(move), "\x1b[%dB", last_row - cursor_row);
+      if (write(STDOUT_FILENO, move, n) < 0) {}
+    }
+  }
   if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
+  cursor_row = 0;
+  below_off = 0;
   free(search);
   lineedit_raw_off();
   free(draft);

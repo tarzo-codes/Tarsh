@@ -19,6 +19,8 @@
 #include "util.h"
 #include "foreign.h"
 #include "fish.h"
+#include "pipehint.h"
+#include "live.h"
 #include "script.h"
 
 extern char **environ;
@@ -30,7 +32,7 @@ static const char *builtin_names[] = {
   "cd", "pwd", "echo", "export", "unset", "alias", "unalias", "source", ".",
   "type", "read", "shift", "umask", "true", "false", ":",
   "jobs", "fg", "bg", "wait", "kill", "exec",
-  "lang", "history", "config", "import-rc", "theme", "explain", "doctor", "help", "exit", NULL
+  "lang", "history", "config", "import-rc", "theme", "explain", "live", "hints", "doctor", "help", "exit", NULL
 };
 
 const char *builtin_name_at(int index) {
@@ -867,6 +869,10 @@ static int builtin_help(void) {
   printf("  a && b     b if a worked            a || b  b if a failed      a ; b   one after the other\n");
   printf("  a &        in the background        $(a)    a's output as text *.txt every .txt file\n");
   printf("  a; and b / a; or b / not a           fish style works too\n\n");
+  printf("seeing what a command does:\n");
+  printf("  type a | > >> << chain and a line under the prompt explains each step and the result\n");
+  printf("  live preview: real output as you type, for LIVE_COMMANDS (grep, awk, sed...), sandboxed\n");
+  printf("  explain 'LINE'   the full breakdown, regexes in words   live / hints  on|off, settings\n\n");
   printf("programs:\n");
   printf("  Ctrl+C stop   Ctrl+Z pause   fg bring back   bg keep running behind   jobs   kill %%1\n\n");
   printf("folders:\n");
@@ -938,6 +944,14 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
   else if (strcmp(name, "import-rc") == 0) *status = builtin_import_rc();
   else if (strcmp(name, "theme") == 0) *status = builtin_theme(args);
   else if (strcmp(name, "doctor") == 0) *status = builtin_doctor();
+  else if (strcmp(name, "live") == 0) *status = live_builtin(args->count, args->items);
+  else if (strcmp(name, "hints") == 0) {
+    if (args->count > 1 && (!strcmp(args->items[1], "on") || !strcmp(args->items[1], "off"))) {
+      live_set_hints(!strcmp(args->items[1], "on"));
+    }
+    printf("pipeline hints are %s (HINTS in config.t keeps it)\n", live_hints_enabled() ? "on" : "off");
+    *status = 0;
+  }
   else if (strcmp(name, "explain") == 0) {
     if (args->count > 1 && (strcmp(args->items[1], "on") == 0 || strcmp(args->items[1], "off") == 0)) {
       foreign_set_enabled(strcmp(args->items[1], "on") == 0);
@@ -945,9 +959,35 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
              foreign_enabled() ? "on" : "off");
       *status = 0;
     }
+    else if (args->count > 1) {
+      // explain 'ls -l | grep txt | wc -l': what a command line does.
+      // One argument is the whole line ('ls | wc'); several are words of
+      // it and get their quotes back (explain grep -E 'a|b' file).
+      char *line;
+      if (args->count == 2) {
+        line = strdup(args->items[1]);
+      }
+      else {
+        size_t length = 1;
+        for (int i = 1;i < args->count;i++) length += strlen(args->items[i]) * 4 + 3;
+        line = calloc(length, 1);
+        for (int i = 1;i < args->count;i++) {
+          char *quoted = shell_quote(args->items[i]);
+          if (i > 1) strcat(line, " ");
+          strcat(line, quoted ? quoted : args->items[i]);
+          free(quoted);
+        }
+      }
+      char *detail = pipehint_detail(line);
+      fputs(detail, stdout);
+      free(detail);
+      free(line);
+      *status = 0;
+    }
     else {
-      printf("explain is %s. usage: explain on|off\n", foreign_enabled() ? "on" : "off");
-      *status = args->count > 1 ? 2 : 0;
+      printf("explain 'COMMAND LINE'   say what a command line does, step by step\n");
+      printf("explain on|off           notes after bash/zsh/fish commands (now %s)\n", foreign_enabled() ? "on" : "off");
+      *status = 0;
     }
   }
   else if (strcmp(name, "help") == 0) *status = builtin_help();

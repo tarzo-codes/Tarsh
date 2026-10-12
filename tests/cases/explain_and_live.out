@@ -1,0 +1,46 @@
+1. ps aux
+     lists running programs
+   | passes that output on as the input of
+2. grep -i nginx
+     keeps lines matching /nginx/, ignoring case
+     /nginx/ means: "nginx"
+   | passes that output on as the input of
+3. awk "{print \$2}"
+     prints column 2
+   | passes that output on as the input of
+4. sort -n
+     sorts the lines as numbers
+   | passes that output on as the input of
+5. head -3
+     keeps the first 3 lines
+     >> pids.txt: adds the output to the end of pids.txt
+     2>&1: error messages go wherever the output goes
+result: added to the end of pids.txt (nothing on screen)
+1. grep -E '^[0-9]{3}-[0-9]{4}$' phones.txt
+     keeps lines matching /^[0-9]{3}-[0-9]{4}$/ in phones.txt
+     /^[0-9]{3}-[0-9]{4}$/ means: the line starts, then exactly 3 digits, then "-", then exactly 4 digits, then the line ends
+result: the matching lines
+1. sed -E 's/([a-z]+)@old\.com/\1@new.org/g' users.txt
+     replaces /([a-z]+)@old\.com/ with "\1@new.org" (every match on each line) in users.txt
+     /([a-z]+)@old\.com/ means: (one or more lowercase letters), then "@old.com"
+     > out.txt: saves the output in out.txt, replacing what was there
+   && if that worked, then
+2. wc -l out.txt
+     counts the lines in out.txt
+result: depends on which commands run (&& and || decide)
+1. cat
+     prints what it reads
+     << EOF: the lines you type next, up to EOF, become the input (a here-document)
+   | passes that output on as the input of
+2. grep -v "^#"
+     keeps lines NOT matching /^#/
+     /^#/ means: the line starts, then "#"
+result: the lines that don't match
+grace
+ada
+not previewed: rm isn't in LIVE_COMMANDS
+not previewed: lines that write files aren't previewed
+live commands for this session updated (LIVE_COMMANDS in config.t keeps them)
+rm: cannot remove 'keep.txt': Operation not permitted
+precious
+[exit 0]

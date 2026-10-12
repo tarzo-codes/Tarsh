@@ -40,6 +40,11 @@ EXPLAIN=1
 HIGHLIGHT=1
 AUTOSUGGEST=1
 GREETING=
+HINTS=1
+LIVE=1
+LIVE_COMMANDS=grep,egrep,fgrep,rg,awk,sed,cut,sort,uniq,head,tail,wc,tr,jq,column,nl,rev,tac,cat,echo,printf,ls,seq,find,fold,paste
+LIVE_LINES=6
+LIVE_DELAY=300
 ```
 
 | key | meaning |
@@ -52,6 +57,10 @@ GREETING=
 | `EXPLAIN` | `0` hides the one-line notes after bash/zsh/fish commands (`explain off` for the session) |
 | `HIGHLIGHT`, `AUTOSUGGEST` | syntax highlighting and grey suggestions while typing |
 | `GREETING` | a line of text to show at startup |
+| `HINTS` | explain `|` / `>` / `>>` / `<<` chains under the prompt as you type |
+| `LIVE` | run the line in a sandbox and show its output as you type |
+| `LIVE_COMMANDS` | which commands may be previewed (every command in the line must be listed). The sandbox can't write, delete or rename files, use the network or signal other programs, so even a risky entry can't do harm |
+| `LIVE_LINES`, `LIVE_DELAY` | how many output lines to show (1 to 30); how long to wait after you stop typing (milliseconds) |
 
 ## Prompt themes
 

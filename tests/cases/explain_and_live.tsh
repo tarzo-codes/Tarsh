@@ -1,0 +1,14 @@
+# explain: what a command line does, step by step (nothing is run)
+explain 'ps aux | grep -i nginx | awk "{print \$2}" | sort -n | head -3 >> pids.txt 2>&1'
+explain grep -E '^[0-9]{3}-[0-9]{4}$' phones.txt
+explain "sed -E 's/([a-z]+)@old\.com/\1@new.org/g' users.txt > out.txt && wc -l out.txt"
+explain 'cat <<EOF | grep -v "^#"'
+# live preview runs in a sandbox
+printf 'id,name\n1,ada\n2,linus\n3,grace\n' > people.csv
+echo precious > keep.txt
+live test 'grep -E "^[0-9]+,[a-g]" people.csv | cut -d, -f2 | sort -r'
+live test 'rm keep.txt'
+live test 'sort people.csv > sorted.txt'
+live add rm
+live test 'rm -f keep.txt'
+cat keep.txt

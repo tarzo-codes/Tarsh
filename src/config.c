@@ -12,6 +12,7 @@
 #include "lang.h"
 #include "foreign.h"
 #include "lineedit.h"
+#include "live.h"
 
 static char config_dir[PATH_MAX];
 static char greeting[512];
@@ -67,6 +68,8 @@ static void write_default_config(const char *config_path) {
   foreign_write_defaults(file);
   fprintf(file, "\n");
   lineedit_configure_defaults(file);
+  fprintf(file, "\n");
+  live_write_defaults(file);
   fprintf(file, "\n# Text shown when tarsh starts (empty: none)\nGREETING=\n");
   fclose(file);
 }
@@ -106,6 +109,9 @@ static void apply_config_line(char *line) {
     return;
   }
   if (lineedit_configure(key, value)) {
+    return;
+  }
+  if (live_configure(key, value)) {
     return;
   }
   if (strcmp(key, "GREETING") == 0) {

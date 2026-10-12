@@ -22,6 +22,7 @@
 #include "script.h"
 #include "foreign.h"
 #include "fish.h"
+#include "live.h"
 
 static double seconds_between(struct timespec start, struct timespec end) {
   return (double)(end.tv_sec - start.tv_sec) +
@@ -213,6 +214,7 @@ int main(int argc, char *argv[]) {
   setup_prompt();
   fzf_setup();
   lang_setup();
+  live_setup();
   expand_init();
 
   int login = argv[0][0] == '-';

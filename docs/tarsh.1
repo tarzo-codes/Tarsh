@@ -79,6 +79,26 @@ Insert the last argument of the previous command.
 .TP
 .B Ctrl+Z, fg, bg, jobs
 Pause programs and bring them back.
+.SH HINTS AND LIVE PREVIEW
+While a line with
+.BR | ,
+.BR > ,
+.B >>
+or
+.B <<
+is typed, a line under the prompt explains each step and the output to expect.
+When every command is listed in
+.BR LIVE_COMMANDS ,
+the line is also run in a sandbox (no writing, deleting or renaming files, no network,
+no signals to other programs, stopped after one second) and the first lines of its output
+are shown.
+.B explain
+.I line
+prints the full breakdown;
+.B live
+and
+.B hints
+turn them on or off.
 .SH BUILTINS
 .BR cd ", " pwd ", " echo ", " export ", " unset ", " set ", " alias ", " unalias ", " abbr ,
 .BR source ", " type ", " read ", " shift ", " umask ", " exec ", " true ", " false ,
@@ -86,7 +106,7 @@ Pause programs and bring them back.
 .BR string ", " math ", " count ", " contains ", " random ,
 .BR functions ", " funcsave ", " funced ,
 .BR prevd ", " nextd ", " dirh ", " cdh ,
-.BR history ", " lang ", " explain ", " theme ", " config ", " import\-rc ", " doctor ", " help ", " exit .
+.BR history ", " lang ", " explain ", " live ", " hints ", " theme ", " config ", " import\-rc ", " doctor ", " help ", " exit .
 .PP
 Type
 .B help
