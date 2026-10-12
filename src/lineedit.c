@@ -136,9 +136,20 @@ static size_t next_char(const EditBuffer *line, size_t at) {
   return at;
 }
 
+// Columns `text` takes on screen: UTF-8 characters count once and color
+// escape sequences (ESC [ ... m) count zero.
 static size_t display_width(const char *text, size_t length) {
   size_t width = 0;
   for (size_t i = 0;i < length;i++) {
+    if (text[i] == '\x1b') {
+      if (i + 1 < length && text[i + 1] == '[') {
+        i += 2;
+        while (i < length && !((unsigned char)text[i] >= 0x40 && (unsigned char)text[i] <= 0x7E)) {
+          i++;
+        }
+      }
+      continue;
+    }
     if (!is_continuation(text[i])) {
       width++;
     }
@@ -352,7 +363,17 @@ static size_t word_end_after(const EditBuffer *line, size_t at) {
 // Main editing loop
 // ---------------------------------------------------------------------------
 
-char *lineedit_read(const char *prompt) {
+// Writes the upper lines of a multi-line prompt. Only the last line is
+// redrawn while typing.
+static void draw_prompt_head(const char *prompt, const char *tail) {
+  if (tail > prompt) {
+    if (write(STDOUT_FILENO, prompt, tail - prompt) < 0) {}
+  }
+}
+
+char *lineedit_read(const char *full_prompt) {
+  const char *last_newline = strrchr(full_prompt, '\n');
+  const char *prompt = last_newline ? last_newline + 1 : full_prompt;
   EditBuffer line = { NULL, 0, 0, 0 };
   editbuf_reserve(&line, 0);
   line.data[0] = '\0';
@@ -365,7 +386,7 @@ char *lineedit_read(const char *prompt) {
   if (lineedit_raw_on() != 0) {
     // Not a usable terminal after all; fall back to plain reading.
     free(line.data);
-    fputs(prompt, stdout);
+    fputs(full_prompt, stdout);
     fflush(stdout);
     char *fallback = NULL;
     size_t fallback_size = 0;
@@ -377,6 +398,7 @@ char *lineedit_read(const char *prompt) {
     return fallback;
   }
 
+  draw_prompt_head(full_prompt, prompt);
   refresh_line(prompt, &line);
 
   while (1) {
@@ -397,6 +419,7 @@ char *lineedit_read(const char *prompt) {
       case KEY_CTRL('c'):
         // Abandon the line, like bash.
         if (write(STDOUT_FILENO, "^C\r\n", 4) < 0) {}
+        draw_prompt_head(full_prompt, prompt);
         line.length = 0;
         line.cursor = 0;
         line.data[0] = '\0';
@@ -456,6 +479,7 @@ char *lineedit_read(const char *prompt) {
 
       case KEY_CTRL('l'):
         if (write(STDOUT_FILENO, "\x1b[H\x1b[2J", 7) < 0) {}
+        draw_prompt_head(full_prompt, prompt);
         break;
 
       case '\t':

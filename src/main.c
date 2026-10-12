@@ -14,6 +14,7 @@
 #include "lineedit.h"
 #include "prompts.h"
 #include "syntax.h"
+#include "theme.h"
 
 static double seconds_between(struct timespec start, struct timespec end) {
   return (double)(end.tv_sec - start.tv_sec) +
@@ -41,6 +42,7 @@ static void print_welcome(void) {
   printf("  - your aliases and startup commands live in ~/.config/tarsh/tarshrc\n");
   printf("    (edit it with: config   copy your bash/zsh aliases with: import-rc)\n");
   printf("  - if/for/while and scripts run as %s (change with: lang fish)\n", lang_current_name());
+  printf("  - make the prompt your own: theme edit (or theme list for ready-made ones)\n");
   if (!fzf_enabled()) {
     printf("  - the pickers need fzf: sudo apt install fzf (or dnf / pacman)\n");
   }
@@ -191,6 +193,7 @@ int main(int argc, char *argv[]) {
   }
 
   int first_run = config_load();
+  theme_init();
 
   // `tarsh -c "command" [name args...]` runs one line and exits. Editors
   // and other tools use this form when tarsh is someone's $SHELL.

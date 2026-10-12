@@ -57,6 +57,8 @@ void jobs_restore_fds(SavedFd *saved, int saved_count);
 void jobs_notify(void);
 
 int jobs_has_stopped(void);
+// Background and paused jobs (for the prompt).
+int jobs_count(void);
 // Sends SIGHUP to stopped jobs when the shell exits.
 void jobs_shutdown(void);
 

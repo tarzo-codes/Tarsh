@@ -14,6 +14,8 @@
 #include "jobs.h"
 #include "lang.h"
 #include "lineedit.h"
+#include "theme.h"
+#include "theme_ui.h"
 #include "util.h"
 
 extern char **environ;
@@ -25,7 +27,7 @@ static const char *builtin_names[] = {
   "cd", "pwd", "echo", "export", "unset", "alias", "unalias", "source", ".",
   "type", "read", "shift", "umask", "true", "false", ":",
   "jobs", "fg", "bg", "wait", "kill", "exec",
-  "lang", "history", "config", "import-rc", "help", "exit", NULL
+  "lang", "history", "config", "import-rc", "theme", "help", "exit", NULL
 };
 
 const char *builtin_name_at(int index) {
@@ -469,11 +471,12 @@ static int builtin_history(ArgList *args) {
 // reloads it afterwards.
 static int builtin_config(ArgList *args) {
   int settings = args->count > 1 && strcmp(args->items[1], "settings") == 0;
-  if (args->count > 1 && !settings && strcmp(args->items[1], "rc") != 0) {
-    fprintf(stderr, "usage: config [rc|settings]\n");
+  if (args->count > 1 && !settings && strcmp(args->items[1], "rc") != 0 && strcmp(args->items[1], "theme") != 0) {
+    fprintf(stderr, "usage: config [rc|settings|theme]\n");
     return 2;
   }
-  const char *path = settings ? config_settings_path() : config_rc_path();
+  int theme_file = args->count > 1 && strcmp(args->items[1], "theme") == 0;
+  const char *path = theme_file ? theme_path() : settings ? config_settings_path() : config_rc_path();
 
   const char *editor = getenv("VISUAL");
   if (editor == NULL || editor[0] == '\0') editor = getenv("EDITOR");
@@ -494,7 +497,10 @@ static int builtin_config(ArgList *args) {
   if (status != 0) {
     return status;
   }
-  if (settings) {
+  if (theme_file) {
+    theme_init();
+  }
+  else if (settings) {
     config_load();
   }
   else {
@@ -581,6 +587,109 @@ static int builtin_import_rc(void) {
   return 0;
 }
 
+static void theme_usage(void) {
+  printf("usage: theme [edit | list | use NAME | on | off | reload | path]\n\n");
+  printf("  theme edit         open the theme editor in your browser\n");
+  printf("                     (--no-open: just print the link, --port N: pick the port)\n");
+  printf("  theme list         show the built-in themes\n");
+  printf("  theme use NAME     switch to a built-in theme (replaces theme.t)\n");
+  printf("  theme off / on     go back to the classic prompt / use theme.t again\n");
+  printf("  theme reload       re-read theme.t after editing it by hand\n");
+  printf("  theme path         where theme.t lives\n");
+}
+
+// The prompt theming engine: see theme.h.
+static int builtin_theme(ArgList *args) {
+  const char *action = args->count > 1 ? args->items[1] : "";
+
+  if (action[0] == '\0') {
+    if (theme_active()) {
+      printf("theme: %s (%s)\n\n", theme_current_name(), theme_path());
+    }
+    else {
+      printf("theme: classic prompt (no theme in use)\n\n");
+    }
+    theme_usage();
+    return 0;
+  }
+  if (strcmp(action, "edit") == 0) {
+    int open_browser = 1;
+    int port = 0;
+    for (int i = 2;i < args->count;i++) {
+      if (strcmp(args->items[i], "--no-open") == 0) {
+        open_browser = 0;
+      }
+      else if (strcmp(args->items[i], "--port") == 0 && i + 1 < args->count) {
+        port = atoi(args->items[++i]);
+      }
+      else {
+        fprintf(stderr, "tarsh: theme edit: unknown option %s\n", args->items[i]);
+        return 2;
+      }
+    }
+    return theme_editor_run(open_browser, port);
+  }
+  if (strcmp(action, "list") == 0) {
+    for (int i = 0;i < theme_preset_count();i++) {
+      printf("  %-10s %s\n", theme_preset_name(i), theme_preset_description(i));
+    }
+    printf("\nswitch with: theme use NAME   (or design your own: theme edit)\n");
+    return 0;
+  }
+  if (strcmp(action, "use") == 0) {
+    if (args->count < 3) {
+      fprintf(stderr, "usage: theme use NAME   (see: theme list)\n");
+      return 2;
+    }
+    int index = theme_preset_find(args->items[2]);
+    if (index < 0) {
+      fprintf(stderr, "tarsh: theme: no theme called '%s' (see: theme list)\n", args->items[2]);
+      return 1;
+    }
+    if (access(theme_path(), F_OK) == 0) {
+      // Keep the previous theme around, just in case.
+      char backup[PATH_MAX + 16];
+      snprintf(backup, sizeof(backup), "%s.bak", theme_path());
+      rename(theme_path(), backup);
+      printf("your previous theme is saved as %s\n", backup);
+    }
+    if (theme_save_text(theme_preset_text(index)) != 0) {
+      fprintf(stderr, "tarsh: theme: can't write %s: %s\n", theme_path(), strerror(errno));
+      return 1;
+    }
+    printf("now using the %s theme\n", args->items[2]);
+    return 0;
+  }
+  if (strcmp(action, "on") == 0 || strcmp(action, "off") == 0) {
+    int enable = strcmp(action, "on") == 0;
+    if (access(theme_path(), F_OK) != 0) {
+      if (!enable) {
+        printf("no theme in use already\n");
+        return 0;
+      }
+      fprintf(stderr, "tarsh: theme: there's no theme.t yet. try: theme list, or theme edit\n");
+      return 1;
+    }
+    if (theme_set_enabled(enable) != 0) {
+      fprintf(stderr, "tarsh: theme: can't update %s: %s\n", theme_path(), strerror(errno));
+      return 1;
+    }
+    printf(enable ? "theme on\n" : "theme off: back to the classic prompt (theme on brings it back)\n");
+    return 0;
+  }
+  if (strcmp(action, "reload") == 0) {
+    theme_init();
+    printf(theme_active() ? "reloaded %s\n" : "no theme in use (%s)\n", theme_path());
+    return 0;
+  }
+  if (strcmp(action, "path") == 0) {
+    printf("%s\n", theme_path());
+    return 0;
+  }
+  theme_usage();
+  return 2;
+}
+
 static int builtin_help(void) {
   printf("tarsh - a beginner-friendly shell\n\n");
   printf("finding things (needs fzf):\n");
@@ -614,6 +723,8 @@ static int builtin_help(void) {
   printf("your setup:\n");
   printf("  config           edit ~/.config/tarsh/tarshrc (aliases, variables, startup commands)\n");
   printf("  config settings  edit ~/.config/tarsh/config.t (prompt, fzf, language)\n");
+  printf("  theme edit       design your prompt in the browser (colors, git, languages, icons)\n");
+  printf("  theme list       built-in prompt themes (theme use NAME to switch)\n");
   printf("  import-rc        copy aliases/exports from ~/.bashrc and ~/.zshrc\n\n");
   printf("if/for/while, functions and other script syntax run in %s (change with: lang).\n",
          lang_current_name());
@@ -664,6 +775,7 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
   else if (strcmp(name, "history") == 0) *status = builtin_history(args);
   else if (strcmp(name, "config") == 0) *status = builtin_config(args);
   else if (strcmp(name, "import-rc") == 0) *status = builtin_import_rc();
+  else if (strcmp(name, "theme") == 0) *status = builtin_theme(args);
   else if (strcmp(name, "help") == 0) *status = builtin_help();
   else if (strcmp(name, "exit") == 0) *status = builtin_exit(args, should_exit);
   else return 0;

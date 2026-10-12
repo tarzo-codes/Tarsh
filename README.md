@@ -8,9 +8,10 @@
 
 ## the idea
 
-- **you shouldn't have to remember paths.** type `cd`, `nvim`, `cp`, `mv` or `rm` and press space: an [fzf](https://github.com/junegunn/fzf) picker opens so you can fuzzy-search for the file or folder.
+- **you shouldn't have to remember paths.** type `cd`, `nvim`, `cp`, `mv` or `rm` and press the space bar: an [fzf](https://github.com/junegunn/fzf) picker opens so you can fuzzy-search for the file or folder.
 - **it's a real shell.** pipes, redirections, `&&`/`||`, wildcards, `$(...)`, aliases, background jobs and Ctrl+Z / `fg` / `bg` are all built in.
 - **you keep the shell language you know.** `if`/`for`/`while`, functions and other scripting syntax run in **bash, zsh or fish**, whichever you choose.
+- **a prompt you design yourself.** `theme edit` opens a theme editor in your browser: git, languages, colors, Nerd Font glyphs, with a live preview.
 - **your own startup file.** aliases and variables live in `~/.config/tarsh/tarshrc`. you don't need `.bashrc`, and `import-rc` copies over what you already have.
 - **mistakes get explained.** `sl` → *did you mean: ls*, `cls` → *on Linux that's: clear*, typing a folder name → *to go into it: cd projects*.
 
@@ -33,11 +34,11 @@ other targets: `make debug` (address/UB sanitizers), `make run`, `make clean`,
 
 | you type | what happens |
 | --- | --- |
-| `cd␣` | pick a folder (`..` and `~` are at the top) |
-| `nvim␣` `vim␣` `nano␣` `cat␣` `less␣` `code␣` | pick files (Tab selects several) |
-| `cp␣` `mv␣` | pick what to copy/move, then pick where it goes |
-| `rm␣` | pick files to delete (Tab selects several) |
-| `sudo nvim␣` | same as `nvim␣` |
+| `cd` + space | pick a folder (`..` and `~` are at the top) |
+| `nvim`, `vim`, `nano`, `cat`, `less` or `code` + space | pick files (Tab selects several) |
+| `cp` or `mv` + space | pick what to copy/move, then pick where it goes |
+| `rm` + space | pick files to delete (Tab selects several) |
+| `sudo nvim` + space | same as `nvim` + space |
 | **Tab** | on the first word: pick a command. after that: pick a path for the word you're typing |
 | **Ctrl+R** | search your command history |
 
@@ -100,6 +101,74 @@ now using fish for loops, functions and other fish syntax
 - directory and variable changes come back to tarsh: `cd src && make` leaves you in `src`, and `export X=$(date)`, fish's `set -gx` or `source venv/bin/activate` keep their variables.
 - Ctrl+Z and `fg` work on these too.
 
+## prompt themes
+
+the prompt is built from **segments** you arrange and color yourself:
+
+| segment | shows |
+| --- | --- |
+| `cwd` | the folder you're in (`~` for home, last *n* folders) |
+| `git` | branch, a ● when there are changes or `+staged ~modified ?untracked` counts, `⇡ahead ⇣behind` |
+| `langs` | languages found in the folder (python, node, rust, go, java, kotlin, c, c++, ruby, php, lua, elixir, haskell, dart, zig, swift, .NET, deno, docker), optionally with versions, in each language's own color |
+| `venv` | the active Python virtualenv / conda env |
+| `status`, `duration`, `jobs` | exit code after a failure, how long a slow command took, how many jobs are running |
+| `user`, `host`, `userhost`, `os`, `shell`, `time` | who, where, your distro's logo, bash/zsh/fish, the clock |
+| `symbol` | the `❯` you type after; can turn red when the last command failed |
+| `text`, `newline` | anything you like; a second line |
+
+each segment has its own text and background color (terminal colors, 256-color numbers or any `#hex`), bold/italic, an icon, text before/after it, and colors for "after an error". segments join with **powerline** arrows, **round** pills, **slant** edges, plain blocks, or as plain text. glyphs come in three sets: **nerd** (needs a [Nerd Font](https://www.nerdfonts.com) in your terminal), **unicode**, or **ascii** for any terminal. hex colors are converted automatically for terminals with 256 or 16 colors.
+
+### the editor
+
+```
+theme edit
+```
+
+opens the theme editor in your browser:
+
+- **live preview** drawn by tarsh's own engine with the real git branch and languages of the folder you're in, both normally and after a failed command
+- **segments list**: add, drag to reorder, duplicate, remove
+- **colors**: terminal colors, ready-made Nord / Catppuccin / Gruvbox / Tokyo Night palettes, or any color
+- **glyph picker**: searchable Nerd Font icons for git, folders, languages, operating systems and more, or paste your own
+- **presets** to start from, and a `theme.t` tab to edit the file directly with warnings for mistakes
+- **Save** applies it to your shell straight away; **Done** (or Enter in the terminal) closes the editor
+
+the editor only listens on `127.0.0.1`, uses a secret link, and runs only while it's open. on a machine without a browser (e.g. over ssh), `theme edit --no-open` prints the link and the `ssh -L` command to reach it from your computer.
+
+### other theme commands
+
+| command | does |
+| --- | --- |
+| `theme list` / `theme use NAME` | built-in themes: `powerline`, `rounded`, `minimal`, `boxed`, `classic` |
+| `theme off` / `theme on` | switch between your theme and the classic `FORMAT` prompt |
+| `theme reload`, `config theme` | re-read `theme.t` / edit it in your text editor |
+
+themes live in `~/.config/tarsh/theme.t`, a plain text file:
+
+```ini
+[theme]
+name=mine
+separator=powerline
+glyphs=nerd
+
+[segment]
+type=cwd
+fg=#ffffff
+bg=#5e81ac
+depth=2
+
+[segment]
+type=git
+fg=black
+bg=yellow
+counts=1
+
+[segment]
+type=symbol
+fg=green
+error_fg=red
+```
+
 ## line editing
 
 | key | action |
@@ -129,7 +198,8 @@ a line that starts with a space is kept out of history.
 | `jobs`, `fg`, `bg`, `wait`, `kill` | job control |
 | `history [n]` | previous commands |
 | `lang [name]` | show or change the shell language |
-| `config [settings]` | edit tarshrc (or config.t) in your editor and reload it |
+| `config [settings\|theme]` | edit tarshrc (or config.t, or theme.t) in your editor and reload it |
+| `theme [edit\|list\|use\|on\|off]` | design your prompt (see "prompt themes") |
 | `import-rc` | copy aliases and exports from `~/.bashrc`, `~/.bash_aliases`, `~/.zshrc`, `~/.profile` |
 | `help`, `exit [status]` | |
 
@@ -214,7 +284,9 @@ chsh -s /usr/local/bin/tarsh
 | `src/fzf.c` | the space / Tab / Ctrl+R pickers |
 | `src/builtins.c` | the builtin commands |
 | `src/suggest.c` | "command not found" help |
-| `src/prompts.c`, `src/config.c` | prompt rendering; config.t and tarshrc |
+| `src/theme.c` | the theme engine: segments, colors, git/language detection, presets |
+| `src/theme_ui.c`, `ui/theme-editor.html` | `theme edit`: the local web server and the editor page (compiled into the binary by `tools/embed.c`) |
+| `src/prompts.c`, `src/config.c` | classic prompt rendering; config.t and tarshrc |
 | `src/parser.c`, `src/util.c` | word splitting for the pickers; PATH lookup and quoting |
 
 ## known limits

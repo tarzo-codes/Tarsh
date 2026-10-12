@@ -601,6 +601,16 @@ void jobs_notify(void) {
   }
 }
 
+int jobs_count(void) {
+  int count = 0;
+  for (int i = 0;i < MAX_JOBS;i++) {
+    if (job_table[i] != NULL) {
+      count++;
+    }
+  }
+  return count;
+}
+
 int jobs_has_stopped(void) {
   for (int i = 0;i < MAX_JOBS;i++) {
     if (job_table[i] != NULL && job_stopped(job_table[i])) {

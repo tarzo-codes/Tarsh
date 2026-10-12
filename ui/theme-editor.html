@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tarsh theme editor</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --line: #dde1e7;
+  --text: #1c2027;
+  --muted: #5d6673;
+  --accent: #3b6fd8;
+  --accent-text: #ffffff;
+  --danger: #c53b3b;
+  --ok: #2f8a4c;
+  --focus: #3b6fd866;
+  --term-bg: #1d2129;
+  --term-fg: #d8dee9;
+  --radius: 10px;
+  --mono: var(--preview-font, "JetBrainsMono Nerd Font"), "JetBrainsMono NF", "FiraCode Nerd Font", "Hack Nerd Font",
+          "MesloLGS NF", "CaskaydiaCove Nerd Font", "Symbols Nerd Font Mono", "Symbols Nerd Font",
+          ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121418;
+    --panel: #1a1d23;
+    --panel-2: #22262e;
+    --line: #2e333c;
+    --text: #e6e9ee;
+    --muted: #9aa3b0;
+    --accent: #6f9bff;
+    --accent-text: #0d1117;
+    --danger: #ff7a7a;
+    --ok: #6fd18f;
+    --focus: #6f9bff55;
+    --term-bg: #0d0f13;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+header.top {
+  position: sticky; top: 0; z-index: 20; background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.bar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; flex-wrap: wrap; }
+.brand { font-weight: 650; letter-spacing: .2px; }
+.brand small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.spacer { flex: 1; }
+.name-field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.name-field input { width: 160px; }
+.unsaved { color: var(--muted); font-size: 13px; min-width: 110px; text-align: right; }
+.unsaved.on { color: var(--accent); }
+
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; border-radius: 8px; }
+.btn:hover { background: var(--panel-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.small { padding: 3px 8px; font-size: 13px; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--panel-2); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.icon-btn { border: 0; background: transparent; padding: 4px 6px; border-radius: 6px; color: var(--muted); line-height: 1; }
+.icon-btn:hover { background: var(--panel-2); color: var(--text); }
+
+input[type=text], input[type=number], select, textarea {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; min-width: 0;
+}
+textarea { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+
+/* preview */
+.preview-wrap { padding: 0 20px 14px; }
+.terminal {
+  background: var(--term-bg); color: var(--term-fg); border-radius: var(--radius);
+  border: 1px solid #00000040; overflow: hidden;
+}
+.terminal.light { --term-bg: #fbfbf8; --term-fg: #2a2f37; }
+.term-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: #ffffff0d; }
+.term-head .dot { width: 10px; height: 10px; border-radius: 50%; background: #ffffff26; }
+.terminal.light .term-head { background: #0000000a; }
+.terminal.light .term-head .dot { background: #00000022; }
+.term-head .title { margin-left: 8px; font-size: 12px; opacity: .6; }
+.term-head .tools { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.term-head .tools label { opacity: .8; display: flex; gap: 4px; align-items: center; }
+.term-head select, .term-head input { background: #ffffff14; border-color: #ffffff22; color: inherit; font-size: 12px; padding: 2px 6px; }
+.terminal.light .term-head select, .terminal.light .term-head input { background: #ffffff; border-color: #0000001f; }
+.term-body { padding: 12px 14px 14px; font-family: var(--mono); font-size: 15px; line-height: 1.5; overflow-x: auto; }
+.term-line { white-space: pre; min-height: 1.5em; }
+.term-note { font-family: system-ui, sans-serif; font-size: 11px; opacity: .5; margin: 8px 0 2px; text-transform: uppercase; letter-spacing: .6px; }
+.cursor { display: inline-block; width: .55em; height: 1.1em; vertical-align: -0.15em; background: currentColor; opacity: .75; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.typed { opacity: .92; }
+.warnings { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--danger); }
+.hint { color: var(--muted); font-size: 12.5px; }
+
+/* layout */
+main { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; padding: 4px 20px 40px; align-items: start; }
+@media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  /* On a phone the preview would cover the screen; let it scroll away. */
+  header.top { position: static; }
+  .bar, .preview-wrap, .presets, main { padding-left: 16px; padding-right: 16px; }
+  .term-head .title { display: none; }
+  .name-field input { width: 120px; }
+}
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.panel > h2 { margin: 0; padding: 12px 14px 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.panel-body { padding: 4px 14px 14px; }
+
+/* presets */
+.presets { display: flex; gap: 8px; overflow-x: auto; padding: 2px 20px 12px; }
+.preset { flex: 0 0 auto; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 9px; padding: 8px 10px; width: 210px; }
+.preset:hover { border-color: var(--accent); }
+.preset b { display: block; font-size: 13px; }
+.preset span { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+/* segment list */
+.seg-list { list-style: none; margin: 0; padding: 0; }
+.seg {
+  display: grid; grid-template-columns: 16px 34px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  padding: 7px 8px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; user-select: none;
+}
+.seg:hover { background: var(--panel-2); }
+.seg.selected { border-color: var(--accent); background: var(--panel-2); }
+.seg.dragging { opacity: .4; }
+.seg.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.seg.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.seg.newline-row { color: var(--muted); }
+.handle { color: var(--muted); cursor: grab; font-size: 12px; letter-spacing: -2px; }
+.chip { height: 22px; border-radius: 6px; border: 1px solid #00000025; display: grid; place-items: center; font-family: var(--mono); font-size: 12px; overflow: hidden; }
+.seg-name { font-weight: 560; }
+.seg-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg-actions { display: flex; gap: 0; opacity: 0; }
+.seg:hover .seg-actions, .seg.selected .seg-actions, .seg:focus-within .seg-actions { opacity: 1; }
+.add-row { display: flex; gap: 8px; padding: 10px 2px 0; }
+.add-row select { flex: 1; }
+
+.context { font-size: 12.5px; color: var(--muted); padding: 10px 14px 12px; border-top: 1px solid var(--line); }
+.context b { color: var(--text); font-weight: 560; }
+
+/* inspector */
+.tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--line); }
+.tab { border: 0; background: transparent; padding: 7px 12px; border-radius: 8px 8px 0 0; color: var(--muted); border-bottom: 2px solid transparent; }
+.tab[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.inspector-body { padding: 14px 16px 18px; }
+.section { padding: 10px 0 14px; border-bottom: 1px dashed var(--line); }
+.section:last-child { border-bottom: 0; }
+.section > h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); font-weight: 600; }
+.row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; margin: 8px 0; }
+@media (max-width: 560px) { .row { grid-template-columns: 1fr; gap: 4px; } }
+.row > label { color: var(--muted); }
+.row .desc { grid-column: 2; color: var(--muted); font-size: 12px; margin-top: -4px; }
+.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.check { display: inline-flex; gap: 7px; align-items: center; }
+.seg-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.seg-title h2 { margin: 0; font-size: 18px; }
+.seg-title p { margin: 0; color: var(--muted); }
+
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.segmented button { border: 0; background: var(--panel); padding: 6px 11px; border-right: 1px solid var(--line); }
+.segmented button:last-child { border-right: 0; }
+.segmented button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); }
+.sep-sample { font-family: var(--mono); margin-right: 6px; }
+
+/* color field */
+.color-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 4px 10px 4px 5px; min-width: 170px; }
+.swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid #00000030; flex: 0 0 auto; }
+.swatch.none { background: repeating-linear-gradient(45deg, transparent 0 4px, #8883 4px 8px); }
+.swatch.auto { background: conic-gradient(#3776ab, #5fa04e, #dea584, #00add8, #ed8b00, #3776ab); }
+
+.popover {
+  position: absolute; z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 12px 40px #0004; padding: 12px; width: 330px; max-width: calc(100vw - 24px);
+}
+.popover h4 { margin: 10px 0 6px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); font-weight: 600; }
+.popover h4:first-child { margin-top: 0; }
+.chips { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+.chips button { height: 28px; border-radius: 6px; border: 1px solid #0003; padding: 0; }
+.chips button[aria-pressed=true] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pop-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.custom-color { display: flex; gap: 8px; align-items: center; }
+.custom-color input[type=color] { width: 40px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.custom-color input[type=text] { width: 100px; font-family: ui-monospace, Menlo, monospace; }
+
+/* glyph picker */
+.glyph-current { font-family: var(--mono); font-size: 20px; width: 40px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.glyph-tools { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.glyph-tools input { flex: 1; min-width: 140px; }
+.glyph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; max-height: 210px; overflow: auto; padding: 2px; border: 1px solid var(--line); border-radius: 8px; }
+.glyph-grid button { font-family: var(--mono); font-size: 18px; height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--panel-2); }
+.glyph-grid button:hover { border-color: var(--accent); }
+.glyph-grid button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); }
+.glyph-cat { grid-column: 1 / -1; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); padding: 6px 2px 0; }
+
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 9px; font-weight: 550; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; }
+.toast.on { opacity: 1; }
+.closed { max-width: 520px; margin: 18vh auto; text-align: center; }
+.closed code { font-family: ui-monospace, Menlo, monospace; background: var(--panel-2); padding: 2px 6px; border-radius: 5px; }
+.empty { color: var(--muted); padding: 10px 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <span class="brand">tarsh<small>theme editor</small></span>
+    <label class="name-field">name <input type="text" id="theme-name" spellcheck="false" aria-label="theme name"></label>
+    <span class="spacer"></span>
+    <span class="unsaved" id="unsaved" aria-live="polite"></span>
+    <button class="btn" id="revert" title="Go back to the saved theme">Revert</button>
+    <button class="btn primary" id="save" title="Save and use this prompt (Ctrl+S)">Save</button>
+    <button class="btn" id="done" title="Close the editor">Done</button>
+  </div>
+  <div class="preview-wrap">
+    <div class="terminal" id="terminal">
+      <div class="term-head">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="title">preview, rendered by tarsh itself</span>
+        <div class="tools">
+          <label>font <input type="text" id="font" placeholder="your Nerd Font" spellcheck="false" size="16"></label>
+          <label><input type="checkbox" id="light"> light</label>
+        </div>
+      </div>
+      <div class="term-body" id="term-body" aria-label="prompt preview"></div>
+    </div>
+    <ul class="warnings" id="warnings"></ul>
+    <p class="hint" id="glyph-hint"></p>
+  </div>
+</header>
+
+<div class="presets" id="presets" aria-label="presets"></div>
+
+<main>
+  <section class="panel" aria-labelledby="segments-title">
+    <h2 id="segments-title">Segments <span class="hint" style="text-transform:none;letter-spacing:0">drag to reorder</span></h2>
+    <div class="panel-body">
+      <ul class="seg-list" id="seg-list"></ul>
+      <div class="add-row">
+        <select id="add-type" aria-label="segment to add"></select>
+        <button class="btn" id="add-btn">Add</button>
+      </div>
+    </div>
+    <div class="context" id="context"></div>
+  </section>
+
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-segment" aria-selected="true">Segment</button>
+      <button class="tab" role="tab" id="tab-theme" aria-selected="false">Theme</button>
+      <button class="tab" role="tab" id="tab-file" aria-selected="false">theme.t</button>
+    </div>
+    <div class="inspector-body" id="inspector"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="popover" id="popover" hidden></div>
+
+<script>
+"use strict";
+const API = location.pathname.replace(/\/?$/, "/") + "api/";
+const G = cp => String.fromCodePoint(cp);
+const $ = sel => document.querySelector(sel);
+const el = (tag, attrs = {}, ...kids) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v === true) node.setAttribute(k, "");
+    else if (v !== false && v != null) node.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null) node.append(kid);
+  return node;
+};
+
+// ---------------------------------------------------------------- catalog
+const SEGMENTS = {
+  cwd:      { label: "Folder",        desc: "The folder you're in", sample: G(0xF07C) },
+  git:      { label: "Git",           desc: "Branch and changes, inside a git repo", sample: G(0xE0A0) },
+  langs:    { label: "Languages",     desc: "Programming languages found in this folder (python, node, rust, go, java, c, …)", sample: G(0xE73C) },
+  venv:     { label: "Python env",    desc: "The active virtualenv or conda env", sample: G(0xE73C) },
+  status:   { label: "Exit status",   desc: "Shows the error code when the last command failed", sample: G(0xF00D) },
+  duration: { label: "Duration",      desc: "How long the last command took, when it was slow", sample: G(0xF252) },
+  time:     { label: "Clock",         desc: "The current time", sample: G(0xF017) },
+  jobs:     { label: "Jobs",          desc: "How many programs are paused or in the background", sample: G(0xF013) },
+  userhost: { label: "user@host",     desc: "Your user name and computer name", sample: G(0xF007) },
+  user:     { label: "User",          desc: "Your user name", sample: G(0xF007) },
+  host:     { label: "Host",          desc: "The computer's name", sample: G(0xF108) },
+  os:       { label: "OS logo",       desc: "Your operating system's logo (Ubuntu, Arch, Fedora, …)", sample: G(0xF17C) },
+  shell:    { label: "Shell language",desc: "The language tarsh hands scripts to (bash, zsh, fish)", sample: G(0xF120) },
+  symbol:   { label: "Symbol",        desc: "The ❯ or $ before what you type; can change color on errors", sample: "❯" },
+  text:     { label: "Text",          desc: "Any text or glyph you like", sample: "T" },
+  newline:  { label: "New line",      desc: "Continue the prompt on a second line", sample: "↵" },
+};
+const SEGMENT_DEFAULTS = { icon: "auto", depth: "3", dirty: "1", counts: "0", ahead_behind: "1", version: "0",
+  show_success: "0", min: "2", format: "%H:%M", fg: "", bg: "", error_fg: "", error_bg: "", bold: "0",
+  italic: "0", prefix: "", suffix: "", text: "", error_text: "" };
+const SEGMENT_KEYS = ["type", "fg", "bg", "error_fg", "error_bg", "bold", "italic", "icon", "prefix", "suffix",
+  "text", "error_text", "format", "depth", "dirty", "counts", "ahead_behind", "version", "show_success", "min"];
+const THEME_DEFAULTS = { name: "custom", enabled: "1", separator: "powerline", separator_char: "", glyphs: "nerd", colors: "auto", blank_line: "0" };
+
+const BASIC = ["black","red","green","yellow","blue","magenta","cyan","white",
+  "bright_black","bright_red","bright_green","bright_yellow","bright_blue","bright_magenta","bright_cyan","bright_white"];
+// How the preview draws the 16 terminal colors (your terminal may differ).
+const BASIC_RGB = ["#1d2021","#cc241d","#98971a","#d79921","#458588","#b16286","#689d6a","#a89984",
+  "#665c54","#fb4934","#b8bb26","#fabd2f","#83a598","#d3869b","#8ec07c","#ebdbb2"];
+const PALETTES = {
+  "Nord": ["#2e3440","#3b4252","#434c5e","#4c566a","#d8dee9","#eceff4","#8fbcbb","#88c0d0","#81a1c1","#5e81ac","#bf616a","#d08770","#ebcb8b","#a3be8c","#b48ead","#ffffff"],
+  "Catppuccin": ["#1e1e2e","#313244","#45475a","#cdd6f4","#f5e0dc","#f2cdcd","#cba6f7","#f38ba8","#eba0ac","#fab387","#f9e2af","#a6e3a1","#94e2d5","#89dceb","#89b4fa","#b4befe"],
+  "Gruvbox": ["#282828","#3c3836","#504945","#ebdbb2","#cc241d","#d65d0e","#d79921","#98971a","#689d6a","#458588","#b16286","#fb4934","#fe8019","#fabd2f","#b8bb26","#83a598"],
+  "Tokyo Night": ["#1a1b26","#24283b","#414868","#c0caf5","#a9b1d6","#7aa2f7","#7dcfff","#2ac3de","#9ece6a","#73daca","#e0af68","#ff9e64","#f7768e","#bb9af7","#565f89","#ffffff"],
+};
+
+const GLYPHS = [
+  ["Prompt symbols", [["❯",0x276F],["➜",0x279C],["→",0x2192],["λ",0x3BB],["$",0x24],["%",0x25],["#",0x23],["▶",0x25B6],["►",0x25BA],["●",0x25CF],["★",0x2605],["♥",0x2665],["✔",0x2714],["✘",0x2718],["⇡",0x21E1],["⇣",0x21E3],["±",0xB1],["…",0x2026],["╭─","╭─"],["╰─","╰─"],["│",0x2502],["▌",0x258C],["█",0x2588]]],
+  ["Folders & files", [["folder",0xF07B],["open folder",0xF07C],["folder alt",0xF115],["home",0xF015],["code",0xF121],["file",0xF15B],["file code",0xF1C9],["book",0xF02D],["archive",0xF187],["download",0xF019]]],
+  ["Git", [["branch",0xE0A0],["git branch",0xE725],["git",0xF1D3],["github",0xF09B],["gitlab",0xF296],["bitbucket",0xF171],["fork",0xF126],["tag",0xF02B],["merge",0xE727],["commit",0xE729]]],
+  ["Languages", [["python",0xE73C],["node",0xE718],["rust",0xE7A8],["go",0xE627],["java",0xE738],["kotlin",0xE634],["c",0xE61E],["c++",0xE61D],["ruby",0xE739],["php",0xE73D],["lua",0xE620],["elixir",0xE62D],["haskell",0xE777],["dart",0xE798],["zig",0xE6A9],["swift",0xE755],["dotnet",0xE77F],["docker",0xF308],["javascript",0xE74E],["typescript",0xE628],["html",0xE736],["css",0xE749],["vim",0xE62B],["terraform",0xE69A]]],
+  ["Operating systems", [["linux",0xF17C],["ubuntu",0xF31B],["debian",0xF306],["fedora",0xF30A],["arch",0xF303],["manjaro",0xF312],["alpine",0xF300],["nixos",0xF313],["opensuse",0xF314],["mint",0xF30E],["pop!_os",0xF32A],["centos",0xF304],["gentoo",0xF30D],["apple",0xF179],["windows",0xF17A],["raspberry pi",0xF315]]],
+  ["System", [["user",0xF007],["users",0xF0C0],["desktop",0xF108],["laptop",0xF109],["server",0xF233],["terminal",0xF120],["clock",0xF017],["hourglass",0xF252],["gear",0xF013],["cogs",0xF085],["check",0xF00C],["cross",0xF00D],["warning",0xF071],["bolt",0xF0E7],["fire",0xF06D],["lock",0xF023],["unlock",0xF09C],["key",0xF084],["globe",0xF0AC],["cloud",0xF0C2],["database",0xF1C0],["battery",0xF240],["wifi",0xF1EB],["heart",0xF004],["star",0xF005],["coffee",0xF0F4],["rocket",0xF135],["bug",0xF188],["flask",0xF0C3],["cube",0xF1B2]]],
+  ["Powerline shapes", [["arrow",0xE0B0],["arrow thin",0xE0B1],["arrow left",0xE0B2],["round right",0xE0B4],["round left",0xE0B6],["slant",0xE0BC],["slant 2",0xE0BA],["flame",0xE0C0],["pixels",0xE0C6],["ice",0xE0C8],["trapezoid",0xE0D2]]],
+];
+
+// ---------------------------------------------------------------- state
+const state = {
+  model: null, saved: "", selected: 0, tab: "segment", presets: [], context: null, path: "",
+  previewTimer: null, previewSeq: 0, lastWarnings: [],
+};
+
+// ---------------------------------------------------------------- theme.t <-> model
+function parseTheme(text) {
+  const model = { theme: { ...THEME_DEFAULTS }, segments: [] };
+  let section = null, current = null;
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line === "[theme]") { section = "theme"; continue; }
+    if (line === "[segment]") { current = { ...SEGMENT_DEFAULTS, type: "" }; model.segments.push(current); section = "segment"; continue; }
+    if (line.startsWith("[")) { section = null; continue; }
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+    if (section === "theme") model.theme[key] = value;
+    else if (section === "segment") current[key] = value;
+  }
+  return model;
+}
+
+function quote(value) {
+  return /^\s|\s$/.test(value) || value === "" ? `"${value}"` : value;
+}
+
+function serialize(model) {
+  const out = ["# tarsh theme, made with `theme edit`", "[theme]"];
+  for (const key of ["name", "enabled", "separator", "separator_char", "glyphs", "colors", "blank_line"]) {
+    const value = model.theme[key] ?? THEME_DEFAULTS[key];
+    if (key === "separator_char" && model.theme.separator !== "custom") continue;
+    if (key === "enabled" && value === "1") continue;
+    if (key === "blank_line" && value === "0") continue;
+    out.push(`${key}=${quote(String(value))}`);
+  }
+  for (const seg of model.segments) {
+    out.push("", "[segment]", `type=${seg.type}`);
+    for (const key of SEGMENT_KEYS.slice(1)) {
+      const value = seg[key] ?? "";
+      if (value === (SEGMENT_DEFAULTS[key] ?? "")) continue;
+      if (key === "text" && seg.type === "symbol" && value === "auto") continue;
+      out.push(`${key}=${quote(String(value))}`);
+    }
+  }
+  return out.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------- ANSI -> HTML
+function xterm256(n) {
+  if (n < 16) return BASIC_RGB[n];
+  if (n < 232) {
+    const steps = [0, 95, 135, 175, 215, 255];
+    n -= 16;
+    return `rgb(${steps[Math.floor(n / 36)]},${steps[Math.floor(n / 6) % 6]},${steps[n % 6]})`;
+  }
+  const level = 8 + (n - 232) * 10;
+  return `rgb(${level},${level},${level})`;
+}
+
+function ansiToNodes(text) {
+  const lines = [[]];
+  let style = {};
+  const parts = text.split(/(\x1b\[[0-9;]*m)/);
+  for (const part of parts) {
+    const match = /^\x1b\[([0-9;]*)m$/.exec(part);
+    if (match) {
+      const codes = match[1] === "" ? [0] : match[1].split(";").map(Number);
+      for (let i = 0; i < codes.length; i++) {
+        const c = codes[i];
+        if (c === 0) style = {};
+        else if (c === 1) style.bold = true;
+        else if (c === 3) style.italic = true;
+        else if (c === 22) style.bold = false;
+        else if (c === 23) style.italic = false;
+        else if (c >= 30 && c <= 37) style.fg = BASIC_RGB[c - 30];
+        else if (c >= 90 && c <= 97) style.fg = BASIC_RGB[c - 82];
+        else if (c >= 40 && c <= 47) style.bg = BASIC_RGB[c - 40];
+        else if (c >= 100 && c <= 107) style.bg = BASIC_RGB[c - 92];
+        else if (c === 39) delete style.fg;
+        else if (c === 49) delete style.bg;
+        else if (c === 38 || c === 48) {
+          const target = c === 38 ? "fg" : "bg";
+          if (codes[i + 1] === 5) { style[target] = xterm256(codes[i + 2]); i += 2; }
+          else if (codes[i + 1] === 2) { style[target] = `rgb(${codes[i + 2]},${codes[i + 3]},${codes[i + 4]})`; i += 4; }
+        }
+      }
+      continue;
+    }
+    const chunks = part.split("\n");
+    chunks.forEach((chunk, index) => {
+      if (index > 0) lines.push([]);
+      if (!chunk) return;
+      const span = el("span", {}, chunk);
+      if (style.fg) span.style.color = style.fg;
+      if (style.bg) span.style.background = style.bg;
+      if (style.bold) span.style.fontWeight = "700";
+      if (style.italic) span.style.fontStyle = "italic";
+      lines[lines.length - 1].push(span);
+    });
+  }
+  return lines;
+}
+
+// ---------------------------------------------------------------- server
+async function api(path, body) {
+  const options = body === undefined ? {} : { method: "POST", body, headers: { "Content-Type": "text/plain;charset=utf-8", "X-Tarsh": "1" } };
+  const response = await fetch(API + path, options);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function schedulePreview() {
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(renderPreview, 90);
+  updateUnsaved();
+}
+
+async function renderPreview() {
+  const seq = ++state.previewSeq;
+  let result;
+  try {
+    result = await api("render", serialize(state.model));
+  } catch (error) {
+    showClosedIfGone(error);
+    return;
+  }
+  if (seq !== state.previewSeq) return;
+  const body = $("#term-body");
+  body.replaceChildren();
+  const addPrompt = (ansi, typed, note) => {
+    if (note) body.append(el("div", { class: "term-note" }, note));
+    const lines = ansiToNodes(ansi);
+    lines.forEach((nodes, i) => {
+      const line = el("div", { class: "term-line" }, nodes);
+      if (i === lines.length - 1) {
+        line.append(el("span", { class: "typed" }, typed));
+        if (!note) line.append(el("span", { class: "cursor" }));
+      }
+      body.append(line);
+    });
+  };
+  addPrompt(result.ok, "git status", null);
+  addPrompt(result.error, "", "after a failed command (exit 127, took 4.2s, 1 background job)");
+  const warnings = $("#warnings");
+  warnings.replaceChildren(...result.warnings.map(w => el("li", {}, "⚠ " + w)));
+}
+
+// ---------------------------------------------------------------- UI: header & presets
+function updateUnsaved() {
+  const changed = serialize(state.model) !== state.saved;
+  const label = $("#unsaved");
+  label.textContent = changed ? "● unsaved changes" : "saved";
+  label.classList.toggle("on", changed);
+  $("#revert").disabled = !changed;
+}
+
+function renderPresets() {
+  $("#presets").replaceChildren(...state.presets.map(preset =>
+    el("button", { class: "preset", title: "Start from this preset", onclick: () => {
+      state.model = parseTheme(preset.text);
+      state.model.theme.name = preset.name;
+      state.selected = 0;
+      renderAll();
+      toast(`Loaded "${preset.name}". Save to keep it.`);
+    }}, el("b", {}, preset.name), el("span", {}, preset.description))));
+}
+
+function renderGlyphHint() {
+  const mode = state.model.theme.glyphs;
+  $("#glyph-hint").textContent = mode === "nerd"
+    ? "Icons showing as boxes? This theme uses Nerd Font glyphs: install one (e.g. JetBrainsMono Nerd Font from nerdfonts.com), set it as your terminal font, and type its name in \"font\" above. Or switch glyphs to unicode in the Theme tab."
+    : "";
+}
+
+function renderContext() {
+  const c = state.context;
+  if (!c) return;
+  const bits = [];
+  bits.push(["folder", c.cwd]);
+  bits.push(["git", c.git.in_repo ? `${c.git.branch}${c.git.staged ? " +" + c.git.staged : ""}${c.git.modified ? " ~" + c.git.modified : ""}${c.git.untracked ? " ?" + c.git.untracked : ""}` : "not a repo"]);
+  bits.push(["languages", c.langs.length ? c.langs.join(", ") : "none found"]);
+  bits.push(["os", c.os]);
+  $("#context").replaceChildren(el("div", {}, "Detected where you ran ", el("code", {}, "theme edit"), ":"),
+    ...bits.map(([k, v]) => el("div", {}, k + ": ", el("b", {}, v))),
+    el("div", { style: "margin-top:6px" }, "Segments with nothing to show (git outside a repo, status after success) are hidden automatically."));
+}
+
+// ---------------------------------------------------------------- UI: segment list
+function colorCss(value, fallback) {
+  if (!value || value === "none" || value === "default") return fallback;
+  if (value === "auto") return "linear-gradient(90deg,#3776ab,#5fa04e,#dea584)";
+  const basic = BASIC.indexOf(value);
+  if (basic >= 0) return BASIC_RGB[basic];
+  if (/^\d+$/.test(value)) return xterm256(Number(value));
+  return value;
+}
+
+function segmentSummary(seg) {
+  const parts = [];
+  if (seg.type === "text" || seg.type === "symbol") parts.push(seg.text && seg.text !== "auto" ? `"${seg.text}"` : "");
+  if (seg.type === "cwd") parts.push(seg.depth === "0" ? "full path" : `last ${seg.depth} folders`);
+  if (seg.type === "git") parts.push(seg.dirty === "1" ? (seg.counts === "1" ? "with counts" : "with ● when changed") : "branch only");
+  if (seg.type === "langs" && seg.version === "1") parts.push("with versions");
+  if (seg.fg) parts.push(`fg ${seg.fg}`);
+  if (seg.bg) parts.push(`bg ${seg.bg}`);
+  return parts.filter(Boolean).join(" · ") || SEGMENTS[seg.type]?.desc || "";
+}
+
+let dragIndex = null;
+function renderSegmentList() {
+  const list = $("#seg-list");
+  if (!state.model.segments.length) {
+    list.replaceChildren(el("li", { class: "empty" }, "No segments yet. Add one below, or pick a preset."));
+    return;
+  }
+  list.replaceChildren(...state.model.segments.map((seg, index) => {
+    const info = SEGMENTS[seg.type] || { label: seg.type || "?", sample: "?" };
+    const chip = el("span", { class: "chip" }, seg.type === "newline" ? "↵" : info.sample);
+    chip.style.background = colorCss(seg.bg, "var(--panel-2)");
+    chip.style.color = colorCss(seg.fg, "var(--text)");
+    const move = (delta) => (event) => {
+      event.stopPropagation();
+      const target = index + delta;
+      if (target < 0 || target >= state.model.segments.length) return;
+      const [item] = state.model.segments.splice(index, 1);
+      state.model.segments.splice(target, 0, item);
+      state.selected = target;
+      renderAll();
+    };
+    const row = el("li", {
+      class: "seg" + (index === state.selected ? " selected" : "") + (seg.type === "newline" ? " newline-row" : ""),
+      draggable: "true", tabindex: "0", "aria-label": `${info.label} segment`,
+      onclick: () => { state.selected = index; state.tab = "segment"; renderAll(); },
+      onkeydown: (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); state.selected = index; state.tab = "segment"; renderAll(); }
+        if (event.altKey && event.key === "ArrowUp") move(-1)(event);
+        if (event.altKey && event.key === "ArrowDown") move(1)(event);
+      },
+      ondragstart: (event) => { dragIndex = index; row.classList.add("dragging"); event.dataTransfer.effectAllowed = "move"; },
+      ondragend: () => { dragIndex = null; renderSegmentList(); },
+      ondragover: (event) => {
+        if (dragIndex === null) return;
+        event.preventDefault();
+        const rect = row.getBoundingClientRect();
+        const after = event.clientY > rect.top + rect.height / 2;
+        row.classList.toggle("drop-after", after);
+        row.classList.toggle("drop-before", !after);
+      },
+      ondragleave: () => row.classList.remove("drop-after", "drop-before"),
+      ondrop: (event) => {
+        event.preventDefault();
+        if (dragIndex === null) return;
+        const rect = row.getBoundingClientRect();
+        let target = index + (event.clientY > rect.top + rect.height / 2 ? 1 : 0);
+        const [item] = state.model.segments.splice(dragIndex, 1);
+        if (dragIndex < target) target--;
+        state.model.segments.splice(target, 0, item);
+        state.selected = target;
+        dragIndex = null;
+        renderAll();
+      },
+    },
+      el("span", { class: "handle", "aria-hidden": "true" }, "⋮⋮"),
+      chip,
+      el("span", {}, el("div", { class: "seg-name" }, info.label), el("div", { class: "seg-sub" }, segmentSummary(seg))),
+      el("span", { class: "seg-actions" },
+        el("button", { class: "icon-btn", title: "Move up (Alt+↑)", "aria-label": "move up", onclick: move(-1) }, "↑"),
+        el("button", { class: "icon-btn", title: "Move down (Alt+↓)", "aria-label": "move down", onclick: move(1) }, "↓"),
+        el("button", { class: "icon-btn", title: "Duplicate", "aria-label": "duplicate", onclick: (event) => {
+          event.stopPropagation();
+          state.model.segments.splice(index + 1, 0, { ...seg });
+          state.selected = index + 1;
+          renderAll();
+        }}, "⧉"),
+        el("button", { class: "icon-btn", title: "Remove", "aria-label": "remove", onclick: (event) => {
+          event.stopPropagation();
+          state.model.segments.splice(index, 1);
+          state.selected = Math.min(state.selected, state.model.segments.length - 1);
+          renderAll();
+        }}, "✕")));
+    return row;
+  }));
+}
+
+// ---------------------------------------------------------------- color popover
+function closePopover() {
+  const pop = $("#popover");
+  pop.hidden = true;
+  pop.replaceChildren();
+  document.removeEventListener("mousedown", outsideClose, true);
+}
+function outsideClose(event) {
+  if (!$("#popover").contains(event.target) && !event.target.closest(".color-btn")) closePopover();
+}
+
+function colorField(value, onChange, allowAuto) {
+  const swatch = el("span", { class: "swatch" });
+  const label = el("span", {});
+  const paint = (v) => {
+    swatch.className = "swatch" + (!v ? " none" : v === "auto" ? " auto" : "");
+    swatch.style.background = v && v !== "auto" ? colorCss(v, "") : "";
+    label.textContent = !v ? "none" : v === "auto" ? "auto (language color)" : v;
+  };
+  paint(value);
+  const button = el("button", { class: "color-btn", type: "button", onclick: () => {
+    const pop = $("#popover");
+    if (!pop.hidden) { closePopover(); return; }
+    const set = (v) => { value = v; paint(v); onChange(v); };
+    const choice = (v, title, background) => {
+      const b = el("button", { title, "aria-label": title, "aria-pressed": String(value === v), onclick: () => { set(v); closePopover(); } });
+      b.style.background = background;
+      return b;
+    };
+    const hex = el("input", { type: "text", value: value && value.startsWith("#") ? value : "", placeholder: "#ff8800", spellcheck: "false", "aria-label": "hex color" });
+    const picker = el("input", { type: "color", value: /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#5e81ac", "aria-label": "pick any color" });
+    picker.addEventListener("input", () => { hex.value = picker.value; set(picker.value); });
+    hex.addEventListener("change", () => { if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex.value)) set(hex.value.toLowerCase()); });
+    const index = el("input", { type: "number", min: "0", max: "255", placeholder: "0-255", style: "width:80px", "aria-label": "256-color number", value: /^\d+$/.test(value || "") ? value : "" });
+    index.addEventListener("change", () => { const n = Number(index.value); if (n >= 0 && n <= 255) set(String(n)); });
+
+    pop.replaceChildren(
+      el("div", { class: "pop-actions" },
+        el("button", { class: "btn small", onclick: () => { set(""); closePopover(); } }, "None"),
+        allowAuto ? el("button", { class: "btn small", onclick: () => { set("auto"); closePopover(); } }, "Auto (language color)") : null),
+      el("h4", {}, "Terminal colors (follow your terminal's palette)"),
+      el("div", { class: "chips" }, BASIC.map((name, i) => choice(name, name.replace("_", " "), BASIC_RGB[i]))),
+      ...Object.entries(PALETTES).flatMap(([name, colors]) => [
+        el("h4", {}, name),
+        el("div", { class: "chips" }, colors.map(c => choice(c, c, c))),
+      ]),
+      el("h4", {}, "Any color"),
+      el("div", { class: "custom-color" }, picker, hex, index));
+    const rect = button.getBoundingClientRect();
+    pop.hidden = false;
+    pop.style.top = (window.scrollY + rect.bottom + 6) + "px";
+    pop.style.left = Math.max(12, Math.min(window.scrollX + rect.left, window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 12)) + "px";
+    setTimeout(() => document.addEventListener("mousedown", outsideClose, true));
+  }}, swatch, label);
+  return button;
+}
+
+// ---------------------------------------------------------------- glyph picker
+function glyphPicker(seg) {
+  const isSymbol = seg.type === "symbol" || seg.type === "text";
+  const key = isSymbol ? "text" : "icon";
+  const current = () => seg[key];
+  const preview = el("span", { class: "glyph-current", "aria-label": "current icon" });
+  const paintPreview = () => {
+    const v = current();
+    preview.textContent = (!v || v === "auto") ? (isSymbol ? (state.model.theme.glyphs === "ascii" ? "$" : "❯") : (SEGMENTS[seg.type]?.sample || "")) : (v === "none" ? "" : v);
+  };
+  paintPreview();
+  const custom = el("input", { type: "text", placeholder: isSymbol ? "type or paste text/glyphs" : "paste any glyph", spellcheck: "false", value: (current() && current() !== "auto" && current() !== "none") ? current() : "", "aria-label": "custom text" });
+  custom.addEventListener("input", () => { seg[key] = custom.value || (isSymbol ? "" : "auto"); paintPreview(); renderSegmentList(); schedulePreview(); grid.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.glyph === seg[key]))); });
+  const search = el("input", { type: "text", placeholder: "search glyphs (git, python, folder…)", "aria-label": "search glyphs" });
+  const grid = el("div", { class: "glyph-grid", role: "listbox" });
+  const fill = () => {
+    const query = search.value.trim().toLowerCase();
+    const nodes = [];
+    for (const [category, items] of GLYPHS) {
+      const matches = items.filter(([name]) => !query || name.toLowerCase().includes(query) || category.toLowerCase().includes(query));
+      if (!matches.length) continue;
+      nodes.push(el("div", { class: "glyph-cat" }, category));
+      for (const [name, code] of matches) {
+        const glyph = typeof code === "number" ? G(code) : code;
+        const b = el("button", { title: name, "aria-label": name, "data-glyph": glyph, "aria-pressed": String(current() === glyph), onclick: () => {
+          seg[key] = glyph; custom.value = glyph; paintPreview(); renderSegmentList(); schedulePreview();
+          grid.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        }}, glyph);
+        nodes.push(b);
+      }
+    }
+    grid.replaceChildren(...(nodes.length ? nodes : [el("div", { class: "empty" }, "No glyphs match.")]));
+  };
+  search.addEventListener("input", fill);
+  fill();
+  const modeButtons = isSymbol ? [] : [
+    el("button", { class: "btn small", onclick: () => { seg.icon = "auto"; custom.value = ""; paintPreview(); renderAll(); } }, "Default icon"),
+    el("button", { class: "btn small", onclick: () => { seg.icon = "none"; custom.value = ""; paintPreview(); renderAll(); } }, "No icon"),
+  ];
+  return el("div", {},
+    el("div", { class: "glyph-tools" }, preview, custom, ...modeButtons),
+    el("div", { class: "glyph-tools" }, search),
+    grid);
+}
+
+// ---------------------------------------------------------------- inspector
+function row(labelText, control, desc) {
+  const id = "f" + Math.random().toString(36).slice(2, 8);
+  if (control instanceof HTMLElement && !control.id && ["INPUT", "SELECT", "TEXTAREA"].includes(control.tagName)) control.id = id;
+  return el("div", { class: "row" },
+    el("label", { for: control.id || null }, labelText), control,
+    desc ? el("div", { class: "desc" }, desc) : null);
+}
+
+function textInput(obj, key, placeholder, after) {
+  const input = el("input", { type: "text", value: obj[key] ?? "", placeholder: placeholder || "", spellcheck: "false" });
+  input.addEventListener("input", () => { obj[key] = input.value; renderSegmentList(); schedulePreview(); after && after(); });
+  return input;
+}
+function numberInput(obj, key, min, max, step) {
+  const input = el("input", { type: "number", value: obj[key], min, max, step: step || "1", style: "width:100px" });
+  input.addEventListener("input", () => { obj[key] = input.value === "" ? SEGMENT_DEFAULTS[key] : input.value; renderSegmentList(); schedulePreview(); });
+  return input;
+}
+function checkbox(obj, key, text) {
+  const input = el("input", { type: "checkbox" });
+  input.checked = obj[key] === "1";
+  input.addEventListener("change", () => { obj[key] = input.checked ? "1" : "0"; renderSegmentList(); schedulePreview(); });
+  return el("label", { class: "check" }, input, text);
+}
+function segmented(obj, key, options, after) {
+  return el("div", { class: "segmented", role: "group" }, options.map(([value, label, sample]) =>
+    el("button", { type: "button", "aria-pressed": String((obj[key] ?? "") === value), onclick: (event) => {
+      obj[key] = value;
+      event.currentTarget.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === event.currentTarget)));
+      schedulePreview(); after && after();
+    }}, sample ? el("span", { class: "sep-sample" }, sample) : null, label)));
+}
+
+function segmentInspector() {
+  const seg = state.model.segments[state.selected];
+  if (!seg) return [el("p", { class: "empty" }, "Pick a segment on the left, or add one.")];
+  const info = SEGMENTS[seg.type] || { label: seg.type, desc: "Unknown segment type" };
+  const sections = [];
+  sections.push(el("div", { class: "seg-title" }, el("h2", {}, info.label), el("p", {}, info.desc)));
+  if (seg.type === "newline") {
+    sections.push(el("p", { class: "hint" }, "Everything after this segment goes on the next line. Typing happens on the last line."));
+    return sections;
+  }
+
+  const content = [];
+  if (seg.type === "text") content.push(row("Text", textInput(seg, "text", "anything, e.g. ╭─ or 🚀")));
+  if (seg.type === "symbol") {
+    content.push(row("Symbol", textInput(seg, "text", "auto: ❯ (or $ in ascii)"), "Leave empty for the default."));
+    content.push(row("After an error", textInput(seg, "error_text", "same as above"), "Optional: a different symbol when the last command failed, like ✘."));
+  }
+  if (seg.type === "cwd") content.push(row("Folders to show", numberInput(seg, "depth", 0, 20), "0 shows the whole path. Your home folder shows as ~."));
+  if (seg.type === "git") {
+    content.push(row("Changes", checkbox(seg, "dirty", "show when there are uncommitted changes"), "Runs git status, which can be slow in huge repos."));
+    content.push(row("Counts", checkbox(seg, "counts", "show +staged ~modified ?untracked numbers")));
+    content.push(row("Sync", checkbox(seg, "ahead_behind", "show ⇡ahead ⇣behind the remote")));
+  }
+  if (seg.type === "langs") {
+    content.push(row("Versions", checkbox(seg, "version", "show versions (python 3.12)"), "Looked up once and cached."));
+    content.push(el("p", { class: "hint" }, "Detects: python, node, rust, go, java, kotlin, c, c++, ruby, php, lua, elixir, haskell, dart, zig, swift, .NET, deno, docker."));
+  }
+  if (seg.type === "status") content.push(row("On success", checkbox(seg, "show_success", "show ✔ when the last command worked")));
+  if (seg.type === "duration") content.push(row("Show after", numberInput(seg, "min", 0, 3600, "0.5"), "Seconds. Faster commands hide this segment."));
+  if (seg.type === "time") {
+    const select = el("select", {}, [["%H:%M", "14:05"], ["%H:%M:%S", "14:05:09"], ["%I:%M %p", "02:05 PM"], ["%a %H:%M", "Mon 14:05"]].map(([v, l]) => el("option", { value: v }, `${l}  (${v})`)));
+    select.value = ["%H:%M", "%H:%M:%S", "%I:%M %p", "%a %H:%M"].includes(seg.format) ? seg.format : "%H:%M";
+    select.addEventListener("change", () => { seg.format = select.value; schedulePreview(); });
+    content.push(row("Format", select));
+  }
+  if (content.length) sections.push(el("div", { class: "section" }, el("h3", {}, "Content"), ...content));
+
+  sections.push(el("div", { class: "section" }, el("h3", {}, "Colors"),
+    row("Text color", colorField(seg.fg, v => { seg.fg = v; renderSegmentList(); schedulePreview(); }, seg.type === "langs")),
+    row("Background", colorField(seg.bg, v => { seg.bg = v; renderSegmentList(); schedulePreview(); }, seg.type === "langs"),
+      "Leave the background empty for plain colored text."),
+    row("Style", el("div", { class: "inline" }, checkbox(seg, "bold", "bold"), checkbox(seg, "italic", "italic"))),
+    row("Text after an error", colorField(seg.error_fg, v => { seg.error_fg = v; schedulePreview(); })),
+    row("Background after an error", colorField(seg.error_bg, v => { seg.error_bg = v; schedulePreview(); }),
+      "Optional: e.g. make the symbol red when the last command failed.")));
+
+  if (!["langs", "newline"].includes(seg.type)) {
+    sections.push(el("div", { class: "section" }, el("h3", {}, seg.type === "symbol" || seg.type === "text" ? "Glyphs" : "Icon"), glyphPicker(seg)));
+  }
+  sections.push(el("div", { class: "section" }, el("h3", {}, "Around it"),
+    row("Before", textInput(seg, "prefix", "e.g. on, via, ("), "Spaces count: \"on \" reads nicely before a branch."),
+    row("After", textInput(seg, "suffix", "e.g. )"))));
+  return sections;
+}
+
+function themeInspector() {
+  const t = state.model.theme;
+  const pl = (cp) => G(cp);
+  const separatorRow = row("Separator", segmented(t, "separator", [
+    ["powerline", "powerline", pl(0xE0B0)], ["round", "round", pl(0xE0B4)], ["slant", "slant", pl(0xE0BC)],
+    ["plain", "blocks", "▌"], ["none", "text only", "Aa"], ["custom", "custom", "…"],
+  ], () => renderInspector()), "How colored blocks join. Powerline shapes need a Nerd Font; \"text only\" ignores backgrounds.");
+  const parts = [separatorRow];
+  if (t.separator === "custom") parts.push(row("Custom separator", textInput(t, "separator_char", "e.g. ▶ or |")));
+  parts.push(row("Glyphs", segmented(t, "glyphs", [["nerd", "Nerd Font"], ["unicode", "Unicode"], ["ascii", "ASCII only"]],
+    () => { renderGlyphHint(); renderSegmentList(); }),
+    "Which default icons to use. ASCII works everywhere, even over a plain console."));
+  parts.push(row("Colors", segmented(t, "colors", [["auto", "auto"], ["truecolor", "true color"], ["256", "256"], ["16", "16"]]),
+    "auto checks your terminal. Hex colors are converted for terminals with fewer colors."));
+  parts.push(row("Spacing", checkbox(t, "blank_line", "blank line before each prompt")));
+  parts.push(row("Enabled", checkbox(t, "enabled", "use this theme (off = the classic FORMAT prompt)")));
+  return [el("div", { class: "seg-title" }, el("h2", {}, "Theme"), el("p", {}, "Settings for the whole prompt.")),
+    el("div", { class: "section" }, ...parts)];
+}
+
+function fileInspector() {
+  const area = el("textarea", { rows: "24", spellcheck: "false", "aria-label": "theme.t contents" }, serialize(state.model));
+  let timer = null;
+  area.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const keepName = state.model.theme.name;
+      state.model = parseTheme(area.value);
+      if (!state.model.theme.name) state.model.theme.name = keepName;
+      state.selected = Math.min(state.selected, Math.max(0, state.model.segments.length - 1));
+      $("#theme-name").value = state.model.theme.name;
+      renderSegmentList();
+      schedulePreview();
+    }, 250);
+  });
+  return [el("div", { class: "seg-title" }, el("h2", {}, "theme.t"), el("p", {}, "The file tarsh reads, at ", el("code", {}, state.path), ". Edits here update everything else.")), area];
+}
+
+function renderInspector() {
+  for (const [name, id] of [["segment", "#tab-segment"], ["theme", "#tab-theme"], ["file", "#tab-file"]]) {
+    $(id).setAttribute("aria-selected", String(state.tab === name));
+  }
+  const body = state.tab === "theme" ? themeInspector() : state.tab === "file" ? fileInspector() : segmentInspector();
+  $("#inspector").replaceChildren(...body);
+}
+
+function renderAll() {
+  $("#theme-name").value = state.model.theme.name || "";
+  renderSegmentList();
+  renderInspector();
+  renderGlyphHint();
+  schedulePreview();
+}
+
+// ---------------------------------------------------------------- actions
+let toastTimer = null;
+function toast(message) {
+  const t = $("#toast");
+  t.textContent = message;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+async function save() {
+  const text = serialize(state.model);
+  try {
+    await api("save", text);
+    state.saved = text;
+    updateUnsaved();
+    toast("Saved. Your prompt in tarsh is updated.");
+  } catch (error) {
+    if (!showClosedIfGone(error)) toast("Couldn't save: " + error.message);
+  }
+}
+
+function showClosed(message) {
+  document.body.replaceChildren(el("div", { class: "closed" },
+    el("h1", {}, message),
+    el("p", {}, "You can close this tab. Run ", el("code", {}, "theme edit"), " in tarsh to open the editor again.")));
+}
+function showClosedIfGone(error) {
+  if (error instanceof TypeError) { showClosed("The editor has stopped"); return true; }
+  return false;
+}
+
+async function done() {
+  if (serialize(state.model) !== state.saved && confirm("Save your changes before closing?")) await save();
+  try { await api("done", ""); } catch (_) { /* already gone */ }
+  showClosed("All done");
+}
+
+// ---------------------------------------------------------------- start
+async function start() {
+  const addSelect = $("#add-type");
+  addSelect.replaceChildren(...Object.entries(SEGMENTS).map(([type, info]) => el("option", { value: type }, `${info.label}: ${info.desc}`)));
+  $("#add-btn").addEventListener("click", () => {
+    const type = addSelect.value;
+    const seg = { ...SEGMENT_DEFAULTS, type };
+    if (type === "symbol") { seg.fg = "green"; seg.error_fg = "red"; }
+    if (type === "langs") { seg.fg = "auto"; }
+    const insertAt = state.model.segments.length ? state.selected + 1 : 0;
+    state.model.segments.splice(insertAt, 0, seg);
+    state.selected = insertAt;
+    state.tab = "segment";
+    renderAll();
+  });
+  $("#theme-name").addEventListener("input", (e) => { state.model.theme.name = e.target.value; schedulePreview(); });
+  $("#save").addEventListener("click", save);
+  $("#done").addEventListener("click", done);
+  $("#revert").addEventListener("click", () => { state.model = parseTheme(state.saved); state.selected = 0; renderAll(); toast("Back to the saved theme."); });
+  $("#tab-segment").addEventListener("click", () => { state.tab = "segment"; renderInspector(); });
+  $("#tab-theme").addEventListener("click", () => { state.tab = "theme"; renderInspector(); });
+  $("#tab-file").addEventListener("click", () => { state.tab = "file"; renderInspector(); });
+  $("#light").addEventListener("change", (e) => $("#terminal").classList.toggle("light", e.target.checked));
+  const font = $("#font");
+  try { font.value = localStorage.getItem("tarsh-preview-font") || ""; } catch (_) {}
+  const applyFont = () => {
+    document.documentElement.style.setProperty("--preview-font", font.value ? `"${font.value.replace(/"/g, "")}"` : '"JetBrainsMono Nerd Font"');
+    try { localStorage.setItem("tarsh-preview-font", font.value); } catch (_) {}
+  };
+  font.addEventListener("input", applyFont);
+  applyFont();
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
+    if (e.key === "Escape") closePopover();
+  });
+  window.addEventListener("beforeunload", (e) => { if (state.model && serialize(state.model) !== state.saved) e.preventDefault(); });
+
+  let data;
+  try { data = await api("state"); }
+  catch (error) { showClosed("Couldn't reach tarsh"); return; }
+  state.presets = data.presets;
+  state.context = data.context;
+  state.path = data.path;
+  state.model = parseTheme(data.theme);
+  state.saved = data.active ? serialize(state.model) : "";
+  renderPresets();
+  renderContext();
+  renderAll();
+}
+start();
+</script>
+</body>
+</html>

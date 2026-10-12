@@ -8,6 +8,8 @@
 
 #include "prompts.h"
 #include "lang.h"
+#include "jobs.h"
+#include "theme.h"
 
 #define DEFAULT_FORMAT "[%u@%h] %w (%l) %s "
 #define PROMPT_RENDER_MAX 1024
@@ -120,6 +122,22 @@ static void append_working_directory(char *out, size_t out_size, size_t *used) {
 }
 
 const char *render_prompt(void) {
+  if (theme_active()) {
+    static char *themed = NULL;
+    ThemeContext context;
+    context.last_status = active_config.last_command_status;
+    context.last_duration = active_config.last_command_duration;
+    context.jobs = jobs_count();
+    context.shell_language = lang_current_name();
+    context.user = active_config.username;
+    context.host = active_config.hostname;
+    free(themed);
+    themed = theme_render_active(&context);
+    if (themed != NULL) {
+      return themed;
+    }
+  }
+
   size_t used = 0;
   rendered_prompt[0] = '\0';
 
