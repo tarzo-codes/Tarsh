@@ -156,11 +156,14 @@ static const char *universal_path(void) {
 // Each line: NAME <tab> x|- <tab> item\x1fitem...  (\n and \\ escaped)
 static void apply_universal(const char *name, int exported, ArgList *values) {
   if (exported) {
+    // Like fish: PATH, MANPATH, LD_LIBRARY_PATH... join with ':'.
+    size_t name_length = strlen(name);
+    const char *separator = (name_length >= 4 && strcmp(name + name_length - 4, "PATH") == 0) ? ":" : " ";
     size_t length = 1;
     for (int i = 0;i < values->count;i++) length += strlen(values->items[i]) + 1;
     char *joined = calloc(length, 1);
     for (int i = 0;i < values->count;i++) {
-      if (i) strcat(joined, " ");
+      if (i) strcat(joined, separator);
       strcat(joined, values->items[i]);
     }
     setenv(name, joined, 1);

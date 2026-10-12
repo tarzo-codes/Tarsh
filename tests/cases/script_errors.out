@@ -1,0 +1,4 @@
+before
+a failing command doesn't stop the script
+tarsh: test.tsh, line 4: 'missing_name' isn't set (assign it first, e.g. missing_name = "")
+[exit 1]

@@ -1,0 +1,47 @@
+# values and operators
+print(1 + 2, 7 / 2, 7 // 2, -7 % 3, 2 ** 8, "5" + 1, "a" + "b")
+name = "tarsh"
+print(f"{name.upper()} has {len(name)} letters, {3.14159:.2f}")
+print("shell style: $name")
+nums = [4, 1, 3]
+print(sorted(nums), max(nums), nums[-1], nums[0:2], 3 in nums)
+d = {"a": 1}
+d["b"] = 2
+for k, v in items(d):
+    print(k, v)
+x = "big" if len(nums) > 2 else "small"
+print(x)
+
+# control flow and functions
+total = 0
+for i in range(10):
+    if i % 2 == 0:
+        continue
+    if i > 7:
+        break
+    total += i
+print("total", total)
+
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+print("fib", fib(15))
+
+def greet(who="friend"):
+    echo "hi $who"
+greet
+greet ada
+greet piped | tr a-z A-Z
+
+# shell integration
+files = ["x.txt", "y z.txt"]
+for f in files:
+    touch $f
+ls $files
+out = $(echo captured)
+print(out, status)
+if ?(test -f x.txt):
+    print("x.txt exists")
+print("args:", argv)
+exit(3)

@@ -1,0 +1,7 @@
+bash-loop 1
+bash-loop 2
+bash-loop 3
+42
+/
+/tmp
+[exit 0]

@@ -181,9 +181,10 @@ static int is_name_char(char c, int first) {
 static void add_positional_joined(Field *field, unsigned char flag) {
   for (int i = 1;i < positional_count;i++) {
     if (i > 1) {
-      field_add(field, " ", 1, flag);
+      // Unquoted $@ / $*: one word per argument, spaces inside kept.
+      field_add(field, flag == FROM_EXPANSION ? "\x1f" : " ", 1, flag);
     }
-    field_add_string(field, positional[i], flag);
+    field_add_string(field, positional[i], flag == FROM_EXPANSION ? FROM_QUOTES : flag);
   }
 }
 
@@ -240,10 +241,25 @@ static void add_variable(Field *field, const char *name, unsigned char flag) {
     if (kind == 0) {
       text = variable_text(name);
     }
-    field_add_string(field, text, flag);
+    // Like fish: a variable is one argument, never split at spaces or
+    // expanded as a wildcard. (Use a list for several arguments.)
+    field_add_string(field, text, flag == FROM_EXPANSION ? FROM_QUOTES : flag);
   }
   free(text);
   arglist_free(&list);
+}
+
+// $(cmd) output: unquoted, it becomes one argument per line (like fish),
+// so file names with spaces survive.
+static void add_command_output(Field *field, const char *output, unsigned char flag) {
+  if (flag != FROM_EXPANSION) {
+    field_add_string(field, output, flag);
+    return;
+  }
+  for (const char *c = output;*c;c++) {
+    if (*c == '\n') field_add(field, "\x1f", 1, FROM_EXPANSION);
+    else field_add(field, c, 1, FROM_QUOTES);
+  }
 }
 
 // Expands the $... or `...` at raw[i]; returns the index after it.
@@ -260,7 +276,7 @@ static size_t expand_dollar(const char *raw, size_t i, Field *field, unsigned ch
     }
     char *inner = strndup(raw + i + 1, end - i - 1);
     char *output = expand_capture(inner);
-    field_add_string(field, output, flag);
+    add_command_output(field, output, flag);
     free(inner);
     free(output);
     return raw[end] == '`' ? end + 1 : end;
@@ -274,7 +290,7 @@ static size_t expand_dollar(const char *raw, size_t i, Field *field, unsigned ch
     size_t inner_length = (end >= i + 3) ? end - i - 3 : 0;
     char *inner = strndup(raw + i + 2, inner_length);
     char *output = expand_capture(inner);
-    field_add_string(field, output, flag);
+    add_command_output(field, output, flag);
     free(inner);
     free(output);
     return end;

@@ -1,0 +1,19 @@
+math 2 + 3 x 4
+math 10 / 4
+string upper hello
+string split , a,b,c
+string replace -a o 0 foo-boo
+echo one two | string match '*two*'
+count a b c
+contains b a b c; and echo contains-b
+false; or echo or-ran
+not false; and echo not-ran
+set fruits apple banana cherry
+echo $fruits
+count $fruits
+set -a fruits date
+echo $fruits
+set -e fruits
+set -q fruits; or echo fruits-erased
+abbr gco git checkout
+abbr

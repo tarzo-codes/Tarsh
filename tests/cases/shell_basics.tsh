@@ -1,0 +1,19 @@
+# pipes, redirections, &&, ||, globs, expansion
+echo hello | tr a-z A-Z
+echo one > file.txt
+echo two >> file.txt
+cat < file.txt
+ls nosuchfile 2> err.txt || echo "ls failed as expected"
+true && echo and-ran
+false || echo or-ran
+touch a.log b.log
+echo *.log
+echo "*.log" stays quoted
+NAME=world
+echo "hello $NAME, ${MISSING:-default}"
+echo $(echo captured) `echo backticks`
+GREETING=hi sh -c 'echo child sees $GREETING'
+alias say='echo said:'
+say aliases work
+false; echo status $?
+cd /; pwd

@@ -1,0 +1,13 @@
+home
+my file.txt
+test.tsh
+[my file.txt]
+[*]
+[line one]
+[line two]
+child sees x=[]
+child sees x=[private]
+unset
+/a:/b
+a b
+[exit 0]

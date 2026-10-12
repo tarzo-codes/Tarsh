@@ -1,0 +1,131 @@
+.TH TARSH 1 "2026" "tarsh 0.4.0" "User Commands"
+.SH NAME
+tarsh \- a beginner-friendly shell with fzf pickers, fish-style editing and a Python-like script language
+.SH SYNOPSIS
+.B tarsh
+.RB [ \-l ]
+.RB [ \-\-private ]
+.br
+.B tarsh
+.I script
+.RI [ args ...]
+.br
+.B tarsh \-c
+.I command
+.RI [ name " [" args ...]]
+.br
+.B tarsh \-\-version
+.SH DESCRIPTION
+.B tarsh
+is an interactive shell for Linux. It runs commands, pipes, redirections,
+.BR && / || ,
+wildcards,
+.B $(...)
+substitution and job control itself. Lines written for
+.BR bash ,
+.B zsh
+or
+.B fish
+are recognised, run in that shell, and followed by a one-line note saying what they did.
+.PP
+Files ending in
+.B .tsh
+(and lines typed at the prompt) can use
+.IR "tarsh script" ,
+a small Python-like language in which every line that isn't a statement is a command.
+See
+.I SCRIPTING.md
+in the documentation folder.
+.SH OPTIONS
+.TP
+.BR \-c " " \fIcommand\fR
+Run one command line and exit. Extra arguments become $0, $1, ...
+.TP
+.BR \-l ", " \-\-login
+Act as a login shell: read
+.I /etc/profile
+and
+.I ~/.profile
+(through sh) before starting.
+.TP
+.BR \-P ", " \-\-private
+Don't read or save command history.
+.TP
+.BR \-v ", " \-\-version
+Print the version.
+.SH INTERACTIVE USE
+.TP
+.BR cd ", " nvim ", " cp ", " mv ", " rm " followed by space"
+Open an fzf picker for a folder or files (needs
+.BR fzf ).
+.TP
+.B Tab
+Complete commands, paths, and options (with their descriptions).
+.TP
+.B Right arrow
+Accept the grey suggestion taken from history.
+.TP
+.B Up arrow
+Previous commands; with text typed, previous commands containing it.
+.TP
+.B Ctrl+R
+Search history.
+.TP
+.B Alt+Left, Alt+Right
+Previous / next folder (on an empty line).
+.TP
+.B Alt+.
+Insert the last argument of the previous command.
+.TP
+.B Ctrl+Z, fg, bg, jobs
+Pause programs and bring them back.
+.SH BUILTINS
+.BR cd ", " pwd ", " echo ", " export ", " unset ", " set ", " alias ", " unalias ", " abbr ,
+.BR source ", " type ", " read ", " shift ", " umask ", " exec ", " true ", " false ,
+.BR jobs ", " fg ", " bg ", " wait ", " kill ,
+.BR string ", " math ", " count ", " contains ", " random ,
+.BR functions ", " funcsave ", " funced ,
+.BR prevd ", " nextd ", " dirh ", " cdh ,
+.BR history ", " lang ", " explain ", " theme ", " config ", " import\-rc ", " doctor ", " help ", " exit .
+.PP
+Type
+.B help
+inside tarsh for a summary of each.
+.SH FILES
+.TP
+.I ~/.config/tarsh/tarshrc
+Commands run when an interactive tarsh starts: aliases, abbreviations, variables. Edit with
+.BR config .
+.TP
+.I ~/.config/tarsh/config.t
+Settings: prompt format, fzf pickers, highlighting, suggestions, explanations, greeting. Edit with
+.BR "config settings" .
+.TP
+.I ~/.config/tarsh/theme.t
+The prompt theme. Design it with
+.BR "theme edit" .
+.TP
+.I ~/.config/tarsh/history
+Command history.
+.TP
+.I ~/.config/tarsh/universal
+Universal variables
+.RB ( "set \-U" ).
+.TP
+.I ~/.config/tarsh/functions/
+Saved functions
+.RB ( funcsave ),
+loaded on first use.
+.SH EXIT STATUS
+The status of the last command; 127 for a command that wasn't found, 126 for one that couldn't run,
+128+n for one stopped by signal n.
+.SH SEE ALSO
+.BR bash (1),
+.BR fish (1),
+.BR zsh (1),
+.BR fzf (1)
+.PP
+The guides installed with tarsh:
+.IR GUIDE.md ,
+.IR SCRIPTING.md ,
+.IR INSTALL.md .

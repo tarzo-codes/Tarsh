@@ -1,0 +1,15 @@
+HELLO
+one
+two
+ls failed as expected
+and-ran
+or-ran
+a.log b.log
+*.log stays quoted
+hello world, default
+captured backticks
+child sees hi
+said: aliases work
+status 1
+/
+[exit 0]

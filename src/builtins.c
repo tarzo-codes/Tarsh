@@ -19,6 +19,7 @@
 #include "util.h"
 #include "foreign.h"
 #include "fish.h"
+#include "script.h"
 
 extern char **environ;
 
@@ -29,7 +30,7 @@ static const char *builtin_names[] = {
   "cd", "pwd", "echo", "export", "unset", "alias", "unalias", "source", ".",
   "type", "read", "shift", "umask", "true", "false", ":",
   "jobs", "fg", "bg", "wait", "kill", "exec",
-  "lang", "history", "config", "import-rc", "theme", "explain", "help", "exit", NULL
+  "lang", "history", "config", "import-rc", "theme", "explain", "doctor", "help", "exit", NULL
 };
 
 const char *builtin_name_at(int index) {
@@ -147,9 +148,15 @@ static int builtin_export(ArgList *args) {
   for (int i = 1;i < args->count;i++) {
     char *separator = strchr(args->items[i], '=');
     if (separator == NULL) {
-      // `export NAME` alone just marks an existing value for export,
-      // which is already true of everything in our environment.
-      if (getenv(args->items[i]) == NULL) {
+      // `export NAME`: hand a shell variable to programs too (a list is
+      // passed as its items separated by spaces).
+      char *text = NULL;
+      if (script_var_get(args->items[i], &text, NULL) == 1) {
+        setenv(args->items[i], text, 1);
+        script_var_unset(args->items[i]);
+        free(text);
+      }
+      else if (getenv(args->items[i]) == NULL) {
         fprintf(stderr, "tarsh: export: %s: not set\n", args->items[i]);
         status = 1;
       }
@@ -161,6 +168,7 @@ static int builtin_export(ArgList *args) {
       fprintf(stderr, "tarsh: export: %s: %s\n", args->items[i], strerror(errno));
       status = 1;
     }
+    script_var_unset(args->items[i]);
     *separator = '=';
   }
   return status;
@@ -169,6 +177,7 @@ static int builtin_export(ArgList *args) {
 static int builtin_unset(ArgList *args) {
   int status = 0;
   for (int i = 1;i < args->count;i++) {
+    script_var_unset(args->items[i]);
     if (unsetenv(args->items[i]) != 0) {
       fprintf(stderr, "tarsh: unset: %s: %s\n", args->items[i], strerror(errno));
       status = 1;
@@ -475,8 +484,9 @@ static int builtin_umask(ArgList *args) {
 
 static int builtin_lang(ArgList *args) {
   if (args->count == 1) {
-    printf("tarsh runs commands, pipes, redirects, && and wildcards itself.\n");
-    printf("loops, if/else, functions and other language features run in:\n\n");
+    printf("tarsh runs commands and tarsh script itself. Lines written in bash, zsh or\n");
+    printf("fish syntax run in that shell: tarsh recognises which one, and uses this\n");
+    printf("one when it can't tell (*):\n\n");
     lang_list();
     printf("\nswitch with: lang bash | lang zsh | lang fish | lang sh\n");
     return 0;
@@ -639,6 +649,109 @@ static int builtin_import_rc(void) {
   return 0;
 }
 
+// The command that installs `package` with this system's package manager.
+static void install_hint(char *out, size_t size, const char *package) {
+  char found[PATH_MAX];
+  static const struct { const char *tool; const char *command; } managers[] = {
+    { "apt-get", "sudo apt install %s" }, { "dnf", "sudo dnf install %s" }, { "pacman", "sudo pacman -S %s" },
+    { "zypper", "sudo zypper install %s" }, { "apk", "sudo apk add %s" }, { "xbps-install", "sudo xbps-install %s" },
+    { "brew", "brew install %s" }, { NULL, NULL }
+  };
+  for (int i = 0;managers[i].tool;i++) {
+    if (path_lookup(managers[i].tool, found, sizeof(found))) {
+      snprintf(out, size, managers[i].command, package);
+      return;
+    }
+  }
+  snprintf(out, size, "install %s with your package manager", package);
+}
+
+static int doctor_color = 1;
+
+static void doctor_line(int good, const char *what, const char *detail, const char *fix) {
+  const char *mark = good ? (doctor_color ? "\x1b[32m\u2713\x1b[0m" : "\u2713") : (doctor_color ? "\x1b[33m!\x1b[0m" : "!");
+  printf("  %s %-16s %s\n", mark, what, detail);
+  if (!good && fix && fix[0]) {
+    printf(doctor_color ? "    \x1b[2m\u2192 %s\x1b[0m\n" : "    \u2192 %s\n", fix);
+  }
+}
+
+// tarsh doctor: is everything set up? Says how to fix what isn't.
+static int builtin_doctor(void) {
+  char found[PATH_MAX];
+  char fix[512];
+  char detail[PATH_MAX + 64];
+  int problems = 0;
+
+  char self[PATH_MAX];
+  ssize_t length = readlink("/proc/self/exe", self, sizeof(self) - 1);
+  self[length > 0 ? length : 0] = '\0';
+  doctor_color = isatty(STDOUT_FILENO);
+  printf("\ntarsh doctor\n\n");
+
+  snprintf(detail, sizeof(detail), "%s", self[0] ? self : "(unknown)");
+  doctor_line(1, "tarsh", detail, NULL);
+
+  int on_path = path_lookup("tarsh", found, sizeof(found));
+  snprintf(detail, sizeof(detail), on_path ? "typing tarsh runs %s" : "tarsh isn't on your PATH", found);
+  snprintf(fix, sizeof(fix), "add its folder to PATH in ~/.profile, or reinstall with ./install.sh");
+  doctor_line(on_path, "PATH", detail, fix);
+  problems += !on_path;
+
+  snprintf(detail, sizeof(detail), "%s (config.t, tarshrc%s)", config_directory(),
+           access(theme_path(), F_OK) == 0 ? ", theme.t" : "");
+  doctor_line(access(config_rc_path(), F_OK) == 0, "settings", detail, "start tarsh once interactively to create them");
+
+  struct { const char *tool; const char *package; const char *why; } tools[] = {
+    { "fzf", "fzf", "pickers: cd + space, Tab, Ctrl+R" },
+    { "git", "git", "branch and changes in the prompt" },
+    { "bash", "bash", "runs bash syntax and scripts" },
+    { "zsh", "zsh", "runs zsh syntax" },
+    { "fish", "fish", "runs fish syntax" },
+    { "man", "man-db", "option descriptions on Tab" },
+  };
+  for (size_t i = 0;i < sizeof(tools) / sizeof(tools[0]);i++) {
+    int have = path_lookup(tools[i].tool, found, sizeof(found));
+    snprintf(detail, sizeof(detail), "%s%s", have ? "" : "missing: ", tools[i].why);
+    install_hint(fix, sizeof(fix), tools[i].package);
+    doctor_line(have, tools[i].tool, detail, fix);
+    problems += !have && i < 3;
+  }
+
+  const char *colorterm = getenv("COLORTERM");
+  const char *term = getenv("TERM");
+  int truecolor = colorterm && (strcmp(colorterm, "truecolor") == 0 || strcmp(colorterm, "24bit") == 0);
+  snprintf(detail, sizeof(detail), "TERM=%s%s", term ? term : "(unset)", truecolor ? ", true color" : ", 256 colors");
+  doctor_line(1, "colors", detail, NULL);
+
+  printf("  ? %-16s %s\n", "icons", "if these look like icons, your font is ready:  \uE0A0 \uF07C \uE73C \uF17C \uE0B0");
+  printf("    \u2192 boxes instead? install a Nerd Font (nerdfonts.com) and pick it in your terminal\n");
+
+  const char *login = getenv("SHELL");
+  int is_login = login && strstr(login, "tarsh") != NULL;
+  int listed = 0;
+  FILE *shells = fopen("/etc/shells", "r");
+  if (shells) {
+    char line[PATH_MAX];
+    while (fgets(line, sizeof(line), shells)) {
+      line[strcspn(line, "\n")] = '\0';
+      if (self[0] && strcmp(line, self) == 0) listed = 1;
+    }
+    fclose(shells);
+  }
+  snprintf(detail, sizeof(detail), is_login ? "tarsh is your login shell" : "your login shell is %s (that's fine)",
+           login ? login : "unknown");
+  doctor_line(1, "login shell", detail, NULL);
+  if (!is_login) {
+    printf("    \u2192 to use tarsh by default: %s\n",
+           listed ? "chsh -s $(command -v tarsh)" : "./install.sh --default-shell");
+  }
+
+  printf("\n%s\n\n", problems ? "a few things to fix above; everything else is optional."
+                                 : "all good. type help for a tour, or theme edit to style your prompt.");
+  return problems ? 1 : 0;
+}
+
 static void theme_usage(void) {
   printf("usage: theme [edit | list | use NAME | on | off | reload | path]\n\n");
   printf("  theme edit         open the theme editor in your browser\n");
@@ -743,43 +856,38 @@ static int builtin_theme(ArgList *args) {
 }
 
 static int builtin_help(void) {
-  printf("tarsh - a beginner-friendly shell\n\n");
-  printf("finding things (needs fzf):\n");
-  printf("  cd<space>        pick a folder to go into\n");
-  printf("  nvim<space>      pick files to edit (also vim, nano, cat, less, code)\n");
-  printf("  cp<space>        pick what to copy, then where to put it (mv works the same)\n");
-  printf("  rm<space>        pick files to delete (Tab selects several)\n");
-  printf("  Tab              complete a command or path (an fzf picker if installed)\n");
-  printf("  Ctrl+R           search commands you ran before\n\n");
+  printf("tarsh - a beginner-friendly shell        full guide: man tarsh, or docs/GUIDE.md\n\n");
+  printf("finding things:\n");
+  printf("  cd + space       pick a folder (nvim, cat, less, code: files; cp/mv: what, then where)\n");
+  printf("  Tab              complete commands, paths, and options with their descriptions\n");
+  printf("  Ctrl+R           search your history          Up arrow  search for what you've typed\n");
+  printf("  Right arrow      accept the grey suggestion   Alt+.     last word of the last command\n\n");
   printf("combining commands:\n");
-  printf("  a | b            send a's output into b          a > file   write output to a file\n");
-  printf("  a && b           run b only if a worked          a >> file  add output to a file\n");
-  printf("  a || b           run b only if a failed          a < file   read input from a file\n");
-  printf("  a ; b            run a, then b                   2>&1       errors go where output goes\n");
-  printf("  a &              run a in the background         $(a)       use a's output as text\n");
-  printf("  *.txt            every .txt file here            ~          your home folder\n\n");
-  printf("running programs:\n");
-  printf("  Ctrl+C           stop the running program\n");
-  printf("  Ctrl+Z           pause it (then: fg to resume, bg to keep it running behind)\n");
-  printf("  jobs             list paused and background programs\n");
-  printf("  fg / bg [%%n]     bring job n back / continue it in the background\n");
-  printf("  kill %%n          stop job n          wait     wait for background jobs\n\n");
-  printf("editing the line:\n");
-  printf("  Up/Down          previous/next command      Ctrl+A/Ctrl+E  start/end of line\n");
-  printf("  Ctrl+W           delete a word              Ctrl+U         delete to start\n");
-  printf("  Ctrl+L           clear the screen           Ctrl+D         exit (on an empty line)\n\n");
+  printf("  a | b      a's output into b        a > f   output to a file   a >> f  add to a file\n");
+  printf("  a && b     b if a worked            a || b  b if a failed      a ; b   one after the other\n");
+  printf("  a &        in the background        $(a)    a's output as text *.txt every .txt file\n");
+  printf("  a; and b / a; or b / not a           fish style works too\n\n");
+  printf("programs:\n");
+  printf("  Ctrl+C stop   Ctrl+Z pause   fg bring back   bg keep running behind   jobs   kill %%1\n\n");
+  printf("folders:\n");
+  printf("  cd -   prevd / nextd (Alt+Left/Right)   cdh recent folders   dirh history   ../ goes there\n\n");
+  printf("variables:\n");
+  printf("  x=1   export X=1   set list a b c   set -U NAME value (saved, shared)   set -e NAME\n\n");
+  printf("tarsh script (a Python-like language, docs/SCRIPTING.md):\n");
+  printf("  x = 6 * 7          for f in glob(\"*.txt\"):     def greet(name):     if ?(grep -q x f):\n");
+  printf("  print(f\"{x}\")       out = $(date)              funcsave greet       functions\n\n");
+  printf("other shells:\n");
+  printf("  paste bash, zsh or fish syntax: it runs there and a note explains what happened\n");
+  printf("  lang [name]      which shell to use when tarsh can't tell (now: %s)\n", lang_current_name());
+  printf("  explain off      hide those notes\n\n");
   printf("builtins:\n");
-  printf("  cd [dir|-]  pwd  echo [-n] [-e]  export N=V  unset N  alias n='cmd'  unalias n\n");
-  printf("  source file  type name  read [-p prompt] var  shift  umask  exec cmd\n");
-  printf("  jobs  fg  bg  wait  kill  history [n]  lang [name]  help  exit [status]\n\n");
+  printf("  cd pwd echo export unset set alias unalias abbr source type read shift umask exec\n");
+  printf("  string math count contains random history jobs fg bg wait kill functions funcsave funced\n\n");
   printf("your setup:\n");
-  printf("  config           edit ~/.config/tarsh/tarshrc (aliases, variables, startup commands)\n");
-  printf("  config settings  edit ~/.config/tarsh/config.t (prompt, fzf, language)\n");
-  printf("  theme edit       design your prompt in the browser (colors, git, languages, icons)\n");
-  printf("  theme list       built-in prompt themes (theme use NAME to switch)\n");
-  printf("  import-rc        copy aliases/exports from ~/.bashrc and ~/.zshrc\n\n");
-  printf("if/for/while, functions and other script syntax run in %s (change with: lang).\n",
-         lang_current_name());
+  printf("  config           your startup file: aliases, abbreviations, variables (tarshrc)\n");
+  printf("  config settings  prompt, pickers, highlighting, suggestions (config.t)\n");
+  printf("  theme edit       design your prompt in the browser     theme list  ready-made ones\n");
+  printf("  import-rc        bring over aliases from bash/zsh      tarsh doctor  check your setup\n");
   return 0;
 }
 
@@ -829,6 +937,7 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
   else if (strcmp(name, "config") == 0) *status = builtin_config(args);
   else if (strcmp(name, "import-rc") == 0) *status = builtin_import_rc();
   else if (strcmp(name, "theme") == 0) *status = builtin_theme(args);
+  else if (strcmp(name, "doctor") == 0) *status = builtin_doctor();
   else if (strcmp(name, "explain") == 0) {
     if (args->count > 1 && (strcmp(args->items[1], "on") == 0 || strcmp(args->items[1], "off") == 0)) {
       foreign_set_enabled(strcmp(args->items[1], "on") == 0);

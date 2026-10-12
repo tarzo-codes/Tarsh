@@ -1,0 +1,5 @@
+print("before")
+false
+print("a failing command doesn't stop the script")
+value = missing_name + 1
+print("never printed")

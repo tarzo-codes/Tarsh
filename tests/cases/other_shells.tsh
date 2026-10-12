@@ -1,0 +1,4 @@
+# bash syntax runs in bash; fish syntax in fish (when installed)
+for i in 1 2 3; do echo bash-loop $i; done
+echo $((6 * 7))
+cd /tmp && (cd /; pwd) && pwd

@@ -1,0 +1,20 @@
+# fish rules: a variable is one argument, never split or globbed
+f = "my file.txt"
+touch $f
+ls
+printf '[%s]\n' $f
+star = "*"
+printf '[%s]\n' $star
+printf '[%s]\n' $(printf 'line one\nline two\n')
+# shell variables stay in tarsh until exported
+x=private
+sh -c 'echo "child sees x=[$x]"'
+export x
+sh -c 'echo "child sees x=[$x]"'
+unset x
+print(env("x", "unset"))
+# PATH-like lists join with ':' when exported
+set -x MY_PATH /a /b
+echo $MY_PATH
+set -x WORDS a b
+sh -c 'echo $WORDS'

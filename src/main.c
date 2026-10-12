@@ -46,16 +46,15 @@ static void print_usage(void) {
 
 static void print_welcome(void) {
   printf("\n  welcome to tarsh!\n\n");
-  printf("  - type a command like cd, nvim or cp and press space to pick a path\n");
-  printf("  - press Tab to complete, Ctrl+R to search your history\n");
-  printf("  - your aliases and startup commands live in ~/.config/tarsh/tarshrc\n");
-  printf("    (edit it with: config   copy your bash/zsh aliases with: import-rc)\n");
-  printf("  - if/for/while and scripts run as %s (change with: lang fish)\n", lang_current_name());
-  printf("  - make the prompt your own: theme edit (or theme list for ready-made ones)\n");
+  printf("  - type cd, nvim or cp and press space to pick a path; Tab completes\n");
+  printf("  - grey text is a suggestion from your history: press the Right arrow to take it\n");
+  printf("  - paste commands written for bash, zsh or fish: they just work, with a short note\n");
+  printf("  - tarsh script reads like Python:  for f in glob(\"*.txt\"):  (see: help)\n");
+  printf("  - make it yours: config (aliases, startup), theme edit (your prompt)\n");
   if (!fzf_enabled()) {
-    printf("  - the pickers need fzf: sudo apt install fzf (or dnf / pacman)\n");
+    printf("  - the pickers need fzf: tarsh doctor shows how to install it\n");
   }
-  printf("  - type help any time to see everything\n\n");
+  printf("  - help shows everything; tarsh doctor checks your setup\n\n");
 }
 
 // Appends one more line of input to a multi-line command.
