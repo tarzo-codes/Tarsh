@@ -11,8 +11,14 @@
 #include "fzf.h"
 #include "lang.h"
 #include "foreign.h"
+#include "lineedit.h"
 
 static char config_dir[PATH_MAX];
+static char greeting[512];
+
+const char *config_greeting(void) {
+  return greeting;
+}
 static char settings_path[PATH_MAX + 16];
 static char rc_path[PATH_MAX + 16];
 
@@ -59,6 +65,9 @@ static void write_default_config(const char *config_path) {
   lang_write_defaults(file);
   fprintf(file, "\n");
   foreign_write_defaults(file);
+  fprintf(file, "\n");
+  lineedit_configure_defaults(file);
+  fprintf(file, "\n# Text shown when tarsh starts (empty: none)\nGREETING=\n");
   fclose(file);
 }
 
@@ -94,6 +103,13 @@ static void apply_config_line(char *line) {
     return;
   }
   if (foreign_configure(key, value)) {
+    return;
+  }
+  if (lineedit_configure(key, value)) {
+    return;
+  }
+  if (strcmp(key, "GREETING") == 0) {
+    snprintf(greeting, sizeof(greeting), "%s", value);
     return;
   }
   fprintf(stderr, "tarsh: config: unknown setting '%s' (ignored)\n", key);

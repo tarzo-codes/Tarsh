@@ -31,6 +31,18 @@ void lineedit_history_add(const char *line);
 int lineedit_history_count(void);
 const char *lineedit_history_get(int index);
 
+// HIGHLIGHT / AUTOSUGGEST settings in config.t.
+#include <stdio.h>
+void lineedit_configure_defaults(FILE *file);
+int lineedit_configure(const char *key, const char *value);
+
+// Private mode: nothing is read from or saved to the history file.
+void lineedit_set_private(int on);
+
+// `history delete TEXT` / `history clear`.
+int lineedit_history_delete(const char *text);
+void lineedit_history_clear(void);
+
 // Called around anything that hands the terminal to another program.
 int lineedit_raw_on(void);
 void lineedit_raw_off(void);

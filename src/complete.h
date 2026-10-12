@@ -8,4 +8,9 @@
 // is filled in; several fill in their common start and are listed.
 void complete_basic(EditBuffer *line);
 
+// The options `command` takes, with a description each (from its man
+// page, or --help for system programs). Cached. Returns how many.
+#include "parser.h"
+int complete_options(const char *command, ArgList **names, ArgList **descriptions);
+
 #endif

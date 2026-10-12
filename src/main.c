@@ -15,8 +15,13 @@
 #include "prompts.h"
 #include "syntax.h"
 #include "theme.h"
+
+#ifndef TARSH_VERSION
+#define TARSH_VERSION "0.4.0"
+#endif
 #include "script.h"
 #include "foreign.h"
+#include "fish.h"
 
 static double seconds_between(struct timespec start, struct timespec end) {
   return (double)(end.tv_sec - start.tv_sec) +
@@ -35,6 +40,8 @@ static void print_usage(void) {
   printf("       tarsh script [args]   run a tarsh script\n");
   printf("       tarsh -c 'command'    run one command line\n");
   printf("       tarsh -l              start as a login shell (reads /etc/profile, ~/.profile)\n");
+  printf("       tarsh --private       don't read or save history this time\n");
+  printf("       tarsh --version       show the version\n");
 }
 
 static void print_welcome(void) {
@@ -107,6 +114,8 @@ static char *history_form(const char *text) {
 static int interactive_loop(void) {
   while (!exec_should_exit()) {
     jobs_notify();
+    universal_sync();
+    dirs_note_cwd();
 
     char *line = lineedit_read(render_prompt());
     // NOTE: Ctrl+D (EOF) leaves the shell
@@ -208,6 +217,7 @@ int main(int argc, char *argv[]) {
   expand_init();
 
   int login = argv[0][0] == '-';
+  int private_mode = 0;
   int first_arg = 1;
   while (first_arg < argc && argv[first_arg][0] == '-') {
     const char *option = argv[first_arg];
@@ -217,6 +227,14 @@ int main(int argc, char *argv[]) {
     }
     else if (strcmp(option, "-c") == 0) {
       break;
+    }
+    else if (strcmp(option, "-P") == 0 || strcmp(option, "--private") == 0) {
+      private_mode = 1;
+      first_arg++;
+    }
+    else if (strcmp(option, "-v") == 0 || strcmp(option, "--version") == 0) {
+      printf("tarsh %s\n", TARSH_VERSION);
+      return 0;
     }
     else if (strcmp(option, "-h") == 0 || strcmp(option, "--help") == 0) {
       print_usage();
@@ -235,6 +253,7 @@ int main(int argc, char *argv[]) {
 
   int first_run = config_load();
   theme_init();
+  universal_load();
 
   // `tarsh -c "command" [name args...]` runs one line and exits. Editors
   // and other tools use this form when tarsh is someone's $SHELL.
@@ -288,11 +307,18 @@ int main(int argc, char *argv[]) {
     return exec_run_stream(stdin);
   }
 
+  lineedit_set_private(private_mode);
   lineedit_history_load();
   int new_rc = config_ensure_rc();
   exec_run_file(config_rc_path(), 1);
   if (first_run || new_rc) {
     print_welcome();
+  }
+  if (config_greeting()[0]) {
+    printf("%s\n", config_greeting());
+  }
+  if (private_mode) {
+    printf("private mode: nothing you type is saved to history.\n");
   }
 
   int status = interactive_loop();

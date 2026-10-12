@@ -20,4 +20,7 @@ const char *config_rc_path(void);
 // Writes a starter tarshrc if there isn't one. Returns 1 if it did.
 int config_ensure_rc(void);
 
+// GREETING= from config.t (fish-style welcome text), or "".
+const char *config_greeting(void);
+
 #endif

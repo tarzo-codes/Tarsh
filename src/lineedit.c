@@ -11,6 +11,10 @@
 #include "config.h"
 #include "fzf.h"
 #include "complete.h"
+#include "fish.h"
+#include "highlight.h"
+#include "parser.h"
+#include "util.h"
 
 #define HISTORY_MAX 1000
 
@@ -20,6 +24,10 @@
 
 static struct termios original_termios;
 static int raw_enabled = 0;
+
+static int highlighting = 1;
+static int suggestions = 1;
+static int private_mode = 0;
 
 static char *history[HISTORY_MAX];
 static int history_count = 0;
@@ -161,16 +169,29 @@ static size_t display_width(const char *text, size_t length) {
 // Drawing
 // ---------------------------------------------------------------------------
 
-static void refresh_line(const char *prompt, const EditBuffer *line) {
-  // Build the whole frame first so the terminal gets one write.
-  size_t frame_size = strlen(prompt) + line->length + 64;
+// Draws the prompt and the line (highlighted), plus the grey
+// autosuggestion after the cursor when there is one.
+static void refresh_line_with(const char *prompt, const EditBuffer *line, const char *suggestion) {
+  char *shown = highlighting ? highlight_line(line->data) : NULL;
+  const char *body = shown ? shown : line->data;
+  if (suggestion == NULL || line->cursor != line->length) {
+    suggestion = "";
+  }
+
+  size_t frame_size = strlen(prompt) + strlen(body) + strlen(suggestion) + 64;
   char *frame = malloc(frame_size);
   if (frame == NULL) {
+    free(shown);
     return;
   }
 
-  int used = snprintf(frame, frame_size, "\r%s%s\x1b[K", prompt, line->data);
-  size_t tail = display_width(line->data + line->cursor, line->length - line->cursor);
+  int used = snprintf(frame, frame_size, "\r%s%s", prompt, body);
+  if (suggestion[0]) {
+    used += snprintf(frame + used, frame_size - used, "\x1b[90m%s\x1b[0m", suggestion);
+  }
+  used += snprintf(frame + used, frame_size - used, "\x1b[K");
+  size_t tail = display_width(line->data + line->cursor, line->length - line->cursor) +
+                display_width(suggestion, strlen(suggestion));
   if (tail > 0) {
     used += snprintf(frame + used, frame_size - used, "\x1b[%zuD", tail);
   }
@@ -179,6 +200,29 @@ static void refresh_line(const char *prompt, const EditBuffer *line) {
     // Nothing useful to do if the terminal went away.
   }
   free(frame);
+  free(shown);
+}
+
+static void refresh_line(const char *prompt, const EditBuffer *line) {
+  refresh_line_with(prompt, line, NULL);
+}
+
+void lineedit_configure_defaults(FILE *file) {
+  fprintf(file, "# Line editing: color the command as you type (red = not found),\n");
+  fprintf(file, "# and suggest the rest from history in grey (Right arrow accepts).\n");
+  fprintf(file, "HIGHLIGHT=%d\n", highlighting);
+  fprintf(file, "AUTOSUGGEST=%d\n", suggestions);
+}
+
+int lineedit_configure(const char *key, const char *value) {
+  if (strcmp(key, "HIGHLIGHT") == 0) highlighting = atoi(value) != 0;
+  else if (strcmp(key, "AUTOSUGGEST") == 0) suggestions = atoi(value) != 0;
+  else return 0;
+  return 1;
+}
+
+void lineedit_set_private(int on) {
+  private_mode = on;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +242,9 @@ static void history_push(const char *line) {
 }
 
 void lineedit_history_load(void) {
+  if (private_mode) {
+    return;
+  }
   snprintf(history_path, sizeof(history_path), "%s/history", config_directory());
 
   FILE *file = fopen(history_path, "r");
@@ -228,13 +275,54 @@ void lineedit_history_add(const char *line) {
 
   history_push(line);
 
-  if (history_path[0] != '\0') {
+  if (history_path[0] != '\0' && !private_mode) {
     FILE *file = fopen(history_path, "a");
     if (file != NULL) {
       fprintf(file, "%s\n", line);
       fclose(file);
     }
   }
+}
+
+static void history_rewrite(void) {
+  if (history_path[0] == '\0' || private_mode) {
+    return;
+  }
+  FILE *file = fopen(history_path, "w");
+  if (file == NULL) {
+    return;
+  }
+  for (int i = 0;i < history_count;i++) {
+    fprintf(file, "%s\n", history[i]);
+  }
+  fclose(file);
+}
+
+int lineedit_history_delete(const char *text) {
+  int removed = 0;
+  int kept = 0;
+  for (int i = 0;i < history_count;i++) {
+    if (strstr(history[i], text) != NULL) {
+      free(history[i]);
+      removed++;
+    }
+    else {
+      history[kept++] = history[i];
+    }
+  }
+  history_count = kept;
+  if (removed) {
+    history_rewrite();
+  }
+  return removed;
+}
+
+void lineedit_history_clear(void) {
+  for (int i = 0;i < history_count;i++) {
+    free(history[i]);
+  }
+  history_count = 0;
+  history_rewrite();
 }
 
 int lineedit_history_count(void) {
@@ -290,13 +378,28 @@ typedef enum {
   ARROW_END,
   ARROW_DELETE,
   ARROW_WORD_LEFT,
-  ARROW_WORD_RIGHT
+  ARROW_WORD_RIGHT,
+  ARROW_ALT_LEFT,
+  ARROW_ALT_RIGHT,
+  ARROW_ALT_DOT,
+  ARROW_ALT_F,
+  ARROW_ALT_B
 }ArrowKey;
 
 static ArrowKey read_escape_sequence(void) {
   char first;
   char second;
-  if (!read_byte_soon(&first) || !read_byte_soon(&second)) {
+  if (!read_byte_soon(&first)) {
+    return ARROW_NONE;
+  }
+  // Alt+key arrives as ESC followed by the key.
+  if (first != '[' && first != 'O') {
+    if (first == '.' || first == '_') return ARROW_ALT_DOT;
+    if (first == 'f') return ARROW_ALT_F;
+    if (first == 'b') return ARROW_ALT_B;
+    return ARROW_NONE;
+  }
+  if (!read_byte_soon(&second)) {
     return ARROW_NONE;
   }
 
@@ -337,11 +440,71 @@ static ArrowKey read_escape_sequence(void) {
       if (!read_byte_soon(&modifier) || !read_byte_soon(&direction)) {
         return ARROW_NONE;
       }
-      if (direction == 'C') return ARROW_WORD_RIGHT;
-      if (direction == 'D') return ARROW_WORD_LEFT;
+      // ;3 is Alt, ;5 is Ctrl
+      if (direction == 'C') return modifier == '3' ? ARROW_ALT_RIGHT : ARROW_WORD_RIGHT;
+      if (direction == 'D') return modifier == '3' ? ARROW_ALT_LEFT : ARROW_WORD_LEFT;
     }
   }
   return ARROW_NONE;
+}
+
+// The rest of the newest history entry that starts with what's typed.
+static const char *suggestion_for(const EditBuffer *line) {
+  if (!suggestions || line->length == 0 || line->cursor != line->length) {
+    return NULL;
+  }
+  for (int i = history_count - 1;i >= 0;i--) {
+    if (strncmp(history[i], line->data, line->length) == 0 && history[i][line->length] != '\0') {
+      return history[i] + line->length;
+    }
+  }
+  return NULL;
+}
+
+// `gco` + space -> `git checkout` when gco is an abbreviation in command
+// position.
+static void expand_abbreviation(EditBuffer *line) {
+  if (line->cursor != line->length || line->length == 0) {
+    return;
+  }
+  size_t start = line->length;
+  while (start > 0 && line->data[start - 1] != ' ' && !strchr("|;&(", line->data[start - 1])) {
+    start--;
+  }
+  size_t before = start;
+  while (before > 0 && line->data[before - 1] == ' ') {
+    before--;
+  }
+  if (before > 0 && !strchr("|;&(", line->data[before - 1])) {
+    return;
+  }
+  const char *expansion = abbr_get(line->data + start);
+  if (expansion == NULL) {
+    return;
+  }
+  editbuf_delete_before(line, line->length - start);
+  editbuf_insert(line, expansion);
+}
+
+// Alt+. : the last argument of the previous command.
+static void insert_last_argument(EditBuffer *line) {
+  if (history_count == 0) {
+    return;
+  }
+  ArgList words;
+  arglist_init(&words);
+  if (parser_split_words(history[history_count - 1], &words) > 0) {
+    char *quoted = shell_quote(words.items[words.count - 1]);
+    if (quoted) {
+      editbuf_insert(line, quoted);
+      free(quoted);
+    }
+  }
+  arglist_free(&words);
+}
+
+static int history_matches(int index, const char *search) {
+  return search == NULL || strstr(history[index], search) != NULL;
 }
 
 static size_t word_start_before(const EditBuffer *line, size_t at) {
@@ -392,6 +555,8 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
   // being typed. `draft` keeps that line while browsing.
   int history_index = history_count;
   char *draft = NULL;
+  // Up arrow with text typed searches history for that text.
+  char *search = NULL;
 
   if (lineedit_raw_on() != 0) {
     // Not a usable terminal after all; fall back to plain reading.
@@ -418,11 +583,20 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
       lineedit_raw_off();
       free(line.data);
       free(draft);
+      free(search);
       return NULL;
     }
 
     if (key == '\r' || key == '\n') {
+      expand_abbreviation(&line);
+      refresh_line(prompt, &line);
       break;
+    }
+
+    // Any key other than up/down ends a history search.
+    if (key != KEY_ESCAPE && key != KEY_CTRL('p') && key != KEY_CTRL('n')) {
+      free(search);
+      search = NULL;
     }
 
     switch (key) {
@@ -463,6 +637,9 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
         break;
 
       case KEY_CTRL('e'):
+        if (line.cursor == line.length && suggestion_for(&line)) {
+          editbuf_insert(&line, suggestion_for(&line));
+        }
         line.cursor = line.length;
         break;
 
@@ -471,6 +648,9 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
         break;
 
       case KEY_CTRL('f'):
+        if (line.cursor == line.length && suggestion_for(&line)) {
+          editbuf_insert(&line, suggestion_for(&line));
+        }
         line.cursor = next_char(&line, line.cursor);
         break;
 
@@ -526,12 +706,59 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
             line.cursor = previous_char(&line, line.cursor);
             break;
           case ARROW_RIGHT:
+            // At the end of the line, Right accepts the grey suggestion.
+            if (line.cursor == line.length && suggestion_for(&line)) {
+              editbuf_insert(&line, suggestion_for(&line));
+            }
             line.cursor = next_char(&line, line.cursor);
+            break;
+          case ARROW_ALT_RIGHT:
+          case ARROW_ALT_F:
+            if (line.cursor == line.length && suggestion_for(&line)) {
+              // Accept one more word of the suggestion.
+              const char *rest = suggestion_for(&line);
+              size_t take = 0;
+              while (rest[take] == ' ') take++;
+              while (rest[take] && rest[take] != ' ') take++;
+              char *word = strndup(rest, take);
+              editbuf_insert(&line, word);
+              free(word);
+            }
+            else if (line.length == 0 && arrow == ARROW_ALT_RIGHT) {
+              // On an empty line: forward in folder history (like fish).
+              free(draft);
+              free(search);
+              if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
+              lineedit_raw_off();
+              free(line.data);
+              return strdup(" nextd");
+            }
+            else {
+              line.cursor = word_end_after(&line, line.cursor);
+            }
+            break;
+          case ARROW_ALT_LEFT:
+          case ARROW_ALT_B:
+            if (line.length == 0 && arrow == ARROW_ALT_LEFT) {
+              free(draft);
+              free(search);
+              if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
+              lineedit_raw_off();
+              free(line.data);
+              return strdup(" prevd");
+            }
+            line.cursor = word_start_before(&line, line.cursor);
+            break;
+          case ARROW_ALT_DOT:
+            insert_last_argument(&line);
             break;
           case ARROW_HOME:
             line.cursor = 0;
             break;
           case ARROW_END:
+            if (line.cursor == line.length && suggestion_for(&line)) {
+              editbuf_insert(&line, suggestion_for(&line));
+            }
             line.cursor = line.length;
             break;
           case ARROW_WORD_LEFT:
@@ -548,27 +775,41 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
               editbuf_delete_before(&line, count);
             }
             break;
-          case ARROW_UP:
-            if (history_index > 0) {
-              if (history_index == history_count) {
-                free(draft);
-                draft = strdup(line.data);
-              }
-              history_index--;
+          case ARROW_UP: {
+            if (history_index == history_count) {
+              free(draft);
+              draft = strdup(line.data);
+              free(search);
+              search = line.length > 0 ? strdup(line.data) : NULL;
+            }
+            // Older entries containing what was typed (skipping repeats).
+            int found = history_index - 1;
+            while (found >= 0 && (!history_matches(found, search) ||
+                   strcmp(history[found], line.data) == 0)) {
+              found--;
+            }
+            if (found >= 0) {
+              history_index = found;
               editbuf_set(&line, history[history_index]);
             }
             break;
-          case ARROW_DOWN:
-            if (history_index < history_count) {
-              history_index++;
-              if (history_index == history_count) {
-                editbuf_set(&line, draft != NULL ? draft : "");
-              }
-              else {
-                editbuf_set(&line, history[history_index]);
-              }
+          }
+          case ARROW_DOWN: {
+            int found = history_index + 1;
+            while (found < history_count && (!history_matches(found, search) ||
+                   strcmp(history[found], line.data) == 0)) {
+              found++;
+            }
+            if (found < history_count) {
+              history_index = found;
+              editbuf_set(&line, history[history_index]);
+            }
+            else if (history_index < history_count) {
+              history_index = history_count;
+              editbuf_set(&line, draft != NULL ? draft : "");
             }
             break;
+          }
           case ARROW_NONE:
             break;
         }
@@ -576,6 +817,7 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
       }
 
       case ' ':
+        expand_abbreviation(&line);
         // Space right after a command like `cd` or `nvim` opens a picker;
         // if the picker isn't wanted it falls through to a plain space.
         // Not while pasting or typing ahead: more keys already waiting
@@ -593,10 +835,11 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
         break;
     }
 
-    refresh_line(prompt, &line);
+    refresh_line_with(prompt, &line, suggestion_for(&line));
   }
 
   if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
+  free(search);
   lineedit_raw_off();
   free(draft);
   return line.data;

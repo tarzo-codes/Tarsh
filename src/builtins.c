@@ -18,6 +18,7 @@
 #include "theme_ui.h"
 #include "util.h"
 #include "foreign.h"
+#include "fish.h"
 
 extern char **environ;
 
@@ -33,19 +34,39 @@ static const char *builtin_names[] = {
 
 const char *builtin_name_at(int index) {
   int count = (int)(sizeof(builtin_names) / sizeof(builtin_names[0])) - 1;
-  if (index < 0 || index >= count) {
+  if (index < 0) {
     return NULL;
   }
-  return builtin_names[index];
+  if (index < count) {
+    return builtin_names[index];
+  }
+  static ArgList fish;
+  static int ready = 0;
+  if (!ready) {
+    arglist_init(&fish);
+    fish_write_builtin_names(&fish);
+    ready = 1;
+  }
+  return index - count < fish.count ? fish.items[index - count] : NULL;
 }
 
 void builtin_write_names(FILE *file) {
   for (int i = 0;builtin_names[i] != NULL;i++) {
     fprintf(file, "%s\n", builtin_names[i]);
   }
+  ArgList fish;
+  arglist_init(&fish);
+  fish_write_builtin_names(&fish);
+  for (int i = 0;i < fish.count;i++) {
+    fprintf(file, "%s\n", fish.items[i]);
+  }
+  arglist_free(&fish);
 }
 
 int builtin_exists(const char *name) {
+  if (fish_builtin_exists(name)) {
+    return 1;
+  }
   for (int i = 0;builtin_names[i] != NULL;i++) {
     if (strcmp(name, builtin_names[i]) == 0) {
       return 1;
@@ -464,6 +485,26 @@ static int builtin_lang(ArgList *args) {
 }
 
 static int builtin_history(ArgList *args) {
+  if (args->count > 1 && strcmp(args->items[1], "clear") == 0) {
+    lineedit_history_clear();
+    printf("history cleared\n");
+    return 0;
+  }
+  if (args->count > 2 && strcmp(args->items[1], "delete") == 0) {
+    int removed = lineedit_history_delete(args->items[2]);
+    printf("removed %d entr%s containing \"%s\"\n", removed, removed == 1 ? "y" : "ies", args->items[2]);
+    return removed ? 0 : 1;
+  }
+  if (args->count > 2 && strcmp(args->items[1], "search") == 0) {
+    int found = 0;
+    for (int i = 0;i < lineedit_history_count();i++) {
+      if (strstr(lineedit_history_get(i), args->items[2]) != NULL) {
+        printf("%5d  %s\n", i + 1, lineedit_history_get(i));
+        found++;
+      }
+    }
+    return found ? 0 : 1;
+  }
   int total = lineedit_history_count();
   int first = 0;
   if (args->count > 1) {
@@ -763,6 +804,7 @@ int builtin_run(ArgList *args, int *status, int *should_exit) {
 
   const char *name = args->items[0];
 
+  if (fish_builtin_run(args, status)) return 1;
   if (strcmp(name, "cd") == 0) *status = builtin_cd(args);
   else if (strcmp(name, "pwd") == 0) *status = builtin_pwd();
   else if (strcmp(name, "echo") == 0) *status = builtin_echo(args);

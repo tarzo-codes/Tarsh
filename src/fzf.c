@@ -10,6 +10,7 @@
 #include "parser.h"
 #include "util.h"
 #include "builtins.h"
+#include "complete.h"
 
 typedef enum {
   PICK_DIRS,
@@ -435,6 +436,43 @@ int fzf_on_tab(EditBuffer *line) {
     choice = run_fzf(source, "command > ", query, 0, 0, 0);
     unlink(list_path);
     free(list_path);
+  }
+  else if (query[0] == '-') {
+    // Options with what they do, fish-style.
+    ArgList words;
+    arglist_init(&words);
+    ArgList *names = NULL, *descriptions = NULL;
+    int found = parser_split_words(line->data, &words) > 0 &&
+                complete_options(words.items[0], &names, &descriptions) > 0;
+    char label[96];
+    snprintf(label, sizeof(label), "%.80s options > ", found ? words.items[0] : "");
+    arglist_free(&words);
+    if (!found) {
+      return 0;
+    }
+    FILE *list = NULL;
+    char *list_path = temp_list(&list);
+    if (list_path == NULL) {
+      return 0;
+    }
+    for (int i = 0;i < names->count;i++) {
+      fprintf(list, "%-26s %s\n", names->items[i], descriptions->items[i]);
+    }
+    fclose(list);
+    char *quoted_path = shell_quote(list_path);
+    char source[PATH_MAX + 32];
+    snprintf(source, sizeof(source), "cat %s", quoted_path ? quoted_path : list_path);
+    free(quoted_path);
+    char *picked = run_fzf(source, label, query, 0, 0, 1);
+    unlink(list_path);
+    free(list_path);
+    if (picked != NULL) {
+      // The picked line is "option  description" (quoted): keep the option.
+      const char *start = picked[0] == '\'' ? picked + 1 : picked;
+      size_t length = strcspn(start, " '");
+      choice = strndup(start, length);
+      free(picked);
+    }
   }
   else {
     // Use the command's own picker kind when it has one.
