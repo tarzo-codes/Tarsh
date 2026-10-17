@@ -159,6 +159,14 @@ static size_t display_width(const char *text, size_t length) {
           i++;
         }
       }
+      else if (i + 1 < length && text[i + 1] == ']') {
+        // OSC (window titles, hyperlinks): ends with BEL or ESC \.
+        i += 2;
+        while (i < length && text[i] != '\a' && !(text[i] == '\x1b' && i + 1 < length && text[i + 1] == '\\')) {
+          i++;
+        }
+        if (i < length && text[i] == '\x1b') i++;
+      }
       continue;
     }
     if (!is_continuation(text[i])) {

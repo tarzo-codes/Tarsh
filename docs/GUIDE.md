@@ -231,6 +231,7 @@ Scripts work too. A script with a `#!` line runs as usual, and one without (`./s
 | `config settings` | **config.t**: prompt, pickers, highlighting, suggestions, greeting |
 | `theme edit` | the **theme editor** in your browser: design your prompt with git, languages, colors and icons |
 | `theme list` / `theme use NAME` | built-in prompt themes |
+| `theme starship` | use your [starship](https://starship.rs) prompt (on by itself when you have a `starship.toml`) |
 | `lang fish` | which shell runs bash/zsh/fish syntax when tarsh can't tell |
 | `import-rc` | copy your aliases and exports from `~/.bashrc` / `~/.zshrc` |
 

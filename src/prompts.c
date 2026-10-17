@@ -10,6 +10,7 @@
 #include "lang.h"
 #include "jobs.h"
 #include "theme.h"
+#include "starship.h"
 
 #define DEFAULT_FORMAT "[%u@%h] %w (%l) %s "
 #define PROMPT_RENDER_MAX 1024
@@ -122,6 +123,16 @@ static void append_working_directory(char *out, size_t out_size, size_t *used) {
 }
 
 const char *render_prompt(void) {
+  if (starship_wanted(theme_active())) {
+    static char *from_starship = NULL;
+    free(from_starship);
+    from_starship = starship_render(active_config.last_command_status,
+                                    active_config.last_command_duration, jobs_count());
+    if (from_starship != NULL) {
+      return from_starship;
+    }
+    // starship failed or was too slow: tarsh's own prompt, just this once.
+  }
   if (theme_active()) {
     static char *themed = NULL;
     ThemeContext context;

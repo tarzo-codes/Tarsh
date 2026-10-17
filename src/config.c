@@ -13,6 +13,7 @@
 #include "foreign.h"
 #include "lineedit.h"
 #include "live.h"
+#include "starship.h"
 
 static char config_dir[PATH_MAX];
 static char greeting[512];
@@ -61,6 +62,8 @@ static void write_default_config(const char *config_path) {
   fprintf(file, "# Modify these values to customize, then restart tarsh.\n\n");
   prompt_write_defaults(file);
   fprintf(file, "\n");
+  starship_write_defaults(file);
+  fprintf(file, "\n");
   fzf_write_defaults(file);
   fprintf(file, "\n");
   lang_write_defaults(file);
@@ -97,6 +100,9 @@ static void apply_config_line(char *line) {
   trim_trailing(key, " \t");
 
   if (prompt_configure(key, value)) {
+    return;
+  }
+  if (starship_configure(key, value)) {
     return;
   }
   if (fzf_configure(key, value)) {

@@ -39,7 +39,7 @@ Full instructions, options, making it your login shell, updating and uninstallin
 
 **Other shells' commands.** Paste bash, zsh or fish syntax and tarsh recognises it, runs it in that shell, brings back any folder or variable changes, and tells you in one line what happened. `source venv/bin/activate` just works. Scripts without a `#!` line are run by the right shell.
 
-**Your setup.** `config` edits your startup file (`~/.config/tarsh/tarshrc`, tarsh's `.bashrc`). `import-rc` copies your aliases from bash and zsh. **`theme edit`** opens a theme editor in your browser where you design the prompt (git, programming languages, colors, Nerd Font icons) with a live preview.
+**Your setup.** `config` edits your startup file (`~/.config/tarsh/tarshrc`, tarsh's `.bashrc`). `import-rc` copies your aliases from bash and zsh. **`theme edit`** opens a theme editor in your browser where you design the prompt (git, programming languages, colors, Nerd Font icons) with a live preview. Using **starship**? tarsh shows your starship prompt as well (`STARSHIP=auto`).
 
 **Help when things go wrong.** "did you mean: ls", "on Linux that's: clear", "that's a folder: cd into it", clear errors with line numbers, and `help` for a tour.
 
@@ -76,6 +76,7 @@ make debug      # build with address/undefined-behaviour sanitizers
 | `src/fzf.c`, `src/complete.c` | pickers and completion (with option descriptions) |
 | `src/pipehint.c`, `src/live.c` | explaining pipelines and regexes; the sandboxed live preview |
 | `src/theme.c`, `src/theme_ui.c`, `ui/` | prompt themes and the browser theme editor |
+| `src/starship.c` | the starship prompt |
 | `src/builtins.c`, `src/alias.c`, `src/suggest.c` | builtins, aliases, "did you mean" |
 | `src/config.c`, `src/prompts.c`, `src/util.c`, `src/parser.c` | settings, classic prompt, helpers |
 

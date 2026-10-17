@@ -38,8 +38,8 @@ void prompt_write_defaults(FILE *file);
 // Records how the previous command went so the next prompt can show it.
 void update_prompt(double duration_seconds, int status);
 
-// Renders the current prompt: the theme from theme.t when there is one,
-// otherwise FORMAT from config.t. The returned string is owned by the prompt
+// Renders the current prompt: starship's when STARSHIP says so, else the
+// theme from theme.t when there is one, otherwise FORMAT from config.t. The returned string is owned by the prompt
 // module and stays valid until the next call.
 const char *render_prompt(void);
 

@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <ctype.h>
+#include <limits.h>
+#include <sys/stat.h>
 
 #include "config.h"
 #include "exec.h"
@@ -23,6 +25,7 @@
 #include "foreign.h"
 #include "fish.h"
 #include "live.h"
+#include "starship.h"
 
 static double seconds_between(struct timespec start, struct timespec end) {
   return (double)(end.tv_sec - start.tv_sec) +
@@ -209,12 +212,30 @@ static int interactive_loop(void) {
   return expand_last_status();
 }
 
+// Keeps an inherited $PWD only when it really is the current directory
+// (it may name a symlinked path, which is worth keeping), like bash does.
+static void fix_pwd(void) {
+  char real[PATH_MAX];
+  if (getcwd(real, sizeof(real)) == NULL) {
+    return;
+  }
+  const char *pwd = getenv("PWD");
+  struct stat here, there;
+  if (pwd != NULL && pwd[0] == '/' && stat(pwd, &there) == 0 && stat(".", &here) == 0 &&
+      here.st_dev == there.st_dev && here.st_ino == there.st_ino) {
+    return;
+  }
+  setenv("PWD", real, 1);
+}
+
 int main(int argc, char *argv[]) {
   // NOTE: Initial setup
+  fix_pwd();
   setup_prompt();
   fzf_setup();
   lang_setup();
   live_setup();
+  starship_setup();
   expand_init();
 
   int login = argv[0][0] == '-';

@@ -21,6 +21,7 @@
 #include "fish.h"
 #include "pipehint.h"
 #include "live.h"
+#include "starship.h"
 #include "script.h"
 
 extern char **environ;
@@ -607,6 +608,7 @@ static int builtin_import_rc(void) {
   }
 
   int imported = 0;
+  int uses_starship = 0;
   for (int s = 0;sources[s] != NULL;s++) {
     char path[PATH_MAX];
     snprintf(path, sizeof(path), "%s/%s", home, sources[s]);
@@ -619,6 +621,9 @@ static int builtin_import_rc(void) {
     size_t line_size = 0;
     while (getline(&line, &line_size, file) != -1) {
       line[strcspn(line, "\n")] = '\0';
+      if (strstr(line, "starship init") != NULL && line[strspn(line, " \t")] != '#') {
+        uses_starship = 1;
+      }
       // Only top-level lines: indented ones sit inside if-blocks.
       if (strncmp(line, "alias ", 6) != 0 && strncmp(line, "export ", 7) != 0) {
         continue;
@@ -641,6 +646,18 @@ static int builtin_import_rc(void) {
   }
   fclose(out);
   free(existing);
+
+  if (uses_starship && starship_mode() != 1) {
+    // `starship init` doesn't know tarsh; the STARSHIP setting does the same job.
+    FILE *settings = fopen(config_settings_path(), "a");
+    if (settings != NULL) {
+      fprintf(settings, "\n# imported: your bash/zsh setup uses starship\nSTARSHIP=on\n");
+      fclose(settings);
+    }
+    starship_set_mode(1);
+    printf("  + STARSHIP=on (your old shell used starship, so tarsh will too)\n");
+    imported++;
+  }
 
   if (imported == 0) {
     printf("nothing new to import (looked in ~/.bashrc, ~/.bash_aliases, ~/.zshrc, ~/.profile)\n");
@@ -711,6 +728,7 @@ static int builtin_doctor(void) {
     { "zsh", "zsh", "runs zsh syntax" },
     { "fish", "fish", "runs fish syntax" },
     { "man", "man-db", "option descriptions on Tab" },
+    { "starship", "starship", "optional: the starship prompt (theme starship)" },
   };
   for (size_t i = 0;i < sizeof(tools) / sizeof(tools[0]);i++) {
     int have = path_lookup(tools[i].tool, found, sizeof(found));
@@ -763,6 +781,42 @@ static void theme_usage(void) {
   printf("  theme off / on     go back to the classic prompt / use theme.t again\n");
   printf("  theme reload       re-read theme.t after editing it by hand\n");
   printf("  theme path         where theme.t lives\n");
+  printf("  theme starship     use the starship prompt (starship.rs) instead\n");
+  printf("                     (on, off or auto; STARSHIP in config.t keeps it)\n");
+}
+
+static const char *starship_mode_name(int mode) {
+  return mode == 1 ? "on" : mode == 0 ? "off" : "auto";
+}
+
+// theme starship [on|off|auto]: starship's prompt for this session.
+static int theme_starship(ArgList *args) {
+  const char *choice = args->count > 2 ? args->items[2] : "on";
+  int mode;
+  if (strcmp(choice, "on") == 0) mode = 1;
+  else if (strcmp(choice, "off") == 0) mode = 0;
+  else if (strcmp(choice, "auto") == 0) mode = 2;
+  else {
+    fprintf(stderr, "usage: theme starship [on | off | auto]\n");
+    return 2;
+  }
+  if (mode != 0 && starship_path() == NULL) {
+    fprintf(stderr, "tarsh: theme: starship isn't installed. get it from https://starship.rs\n");
+    fprintf(stderr, "       (curl -sS https://starship.rs/install.sh | sh), then try again\n");
+    return 1;
+  }
+  starship_set_mode(mode);
+  if (mode == 1) {
+    printf("using starship's prompt (%s)\n", starship_path());
+    printf("style it in ~/.config/starship.toml. to keep it: STARSHIP=on in config settings\n");
+  }
+  else if (mode == 0) {
+    printf("starship off: back to %s\n", theme_active() ? "your tarsh theme" : "the classic prompt");
+  }
+  else {
+    printf("starship: auto (%s)\n", starship_wanted(theme_active()) ? "in use" : "not in use right now");
+  }
+  return 0;
 }
 
 // The prompt theming engine: see theme.h.
@@ -770,7 +824,11 @@ static int builtin_theme(ArgList *args) {
   const char *action = args->count > 1 ? args->items[1] : "";
 
   if (action[0] == '\0') {
-    if (theme_active()) {
+    if (starship_wanted(theme_active())) {
+      printf("theme: starship (STARSHIP=%s, configured in ~/.config/starship.toml)\n\n",
+             starship_mode_name(starship_mode()));
+    }
+    else if (theme_active()) {
       printf("theme: %s (%s)\n\n", theme_current_name(), theme_path());
     }
     else {
@@ -778,6 +836,9 @@ static int builtin_theme(ArgList *args) {
     }
     theme_usage();
     return 0;
+  }
+  if (strcmp(action, "starship") == 0) {
+    return theme_starship(args);
   }
   if (strcmp(action, "edit") == 0) {
     int open_browser = 1;
@@ -824,6 +885,9 @@ static int builtin_theme(ArgList *args) {
       fprintf(stderr, "tarsh: theme: can't write %s: %s\n", theme_path(), strerror(errno));
       return 1;
     }
+    if (starship_mode() == 1) {
+      starship_set_mode(2);
+    }
     printf("now using the %s theme\n", args->items[2]);
     return 0;
   }
@@ -840,6 +904,9 @@ static int builtin_theme(ArgList *args) {
     if (theme_set_enabled(enable) != 0) {
       fprintf(stderr, "tarsh: theme: can't update %s: %s\n", theme_path(), strerror(errno));
       return 1;
+    }
+    if (enable && starship_mode() == 1) {
+      starship_set_mode(2);
     }
     printf(enable ? "theme on\n" : "theme off: back to the classic prompt (theme on brings it back)\n");
     return 0;
@@ -893,6 +960,7 @@ static int builtin_help(void) {
   printf("  config           your startup file: aliases, abbreviations, variables (tarshrc)\n");
   printf("  config settings  prompt, pickers, highlighting, suggestions (config.t)\n");
   printf("  theme edit       design your prompt in the browser     theme list  ready-made ones\n");
+  printf("  theme starship   use your starship prompt (starship.rs)\n");
   printf("  import-rc        bring over aliases from bash/zsh      tarsh doctor  check your setup\n");
   return 0;
 }

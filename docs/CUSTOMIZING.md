@@ -33,6 +33,7 @@ FORMAT=[%u@%h] %w (%l) %s
 DEPTH=1
 SHOW_TIME=1
 SYMBOL=$
+STARSHIP=auto
 FZF=1
 FZF_COMMANDS=cd,cp,mv,rm,nvim,vim,nano,cat,less,code,source
 SHELL_LANG=bash
@@ -52,6 +53,7 @@ LIVE_DELAY=300
 | `FORMAT` | the classic prompt (used when no theme is on): `%u` user, `%h` host, `%w` folder, `%l` shell language, `%s` symbol, `%t` last duration, `%?` last exit status, `%%` a percent sign |
 | `DEPTH` | how many folders `%w` shows (`0` = the whole path) |
 | `SHOW_TIME`, `SYMBOL` | whether `%t` shows; what `%s` shows |
+| `STARSHIP` | use the [starship](https://starship.rs) prompt: `auto` (when it's installed and `~/.config/starship.toml` exists, unless a tarsh theme is on), `on` or `off`. See [Starship](#starship) |
 | `FZF`, `FZF_COMMANDS` | turn the pickers off, or choose which commands open one on space (also supported: `vi`, `micro`, `hx`, `emacs`, `bat`, `ls`, `ln`, `rmdir`, `pushd`, `chmod`) |
 | `SHELL_LANG` | `bash`, `zsh`, `fish` or `sh`: the shell used when tarsh can't tell which one a line was written for (`lang NAME` changes it for the session) |
 | `EXPLAIN` | `0` hides the one-line notes after bash/zsh/fish commands (`explain off` for the session) |
@@ -103,6 +105,7 @@ the editor only listens on `127.0.0.1`, uses a secret link, and runs only while 
 | `theme list` / `theme use NAME` | built-in themes: `powerline`, `rounded`, `minimal`, `boxed`, `classic` |
 | `theme off` / `theme on` | switch between your theme and the classic `FORMAT` prompt |
 | `theme reload`, `config theme` | re-read `theme.t` / edit it in your text editor |
+| `theme starship` / `theme starship off` | use the starship prompt instead, or go back (this session) |
 
 themes live in `~/.config/tarsh/theme.t`, a plain text file:
 
@@ -130,3 +133,15 @@ fg=green
 error_fg=red
 ```
 
+## Starship
+
+Already using [starship](https://starship.rs) in bash or zsh? tarsh can show the same prompt, styled by the same `~/.config/starship.toml`.
+
+1. Install starship if you haven't: `curl -sS https://starship.rs/install.sh | sh` (or your package manager).
+2. That's usually it. With the default `STARSHIP=auto`, tarsh uses starship whenever it's installed and you have a `starship.toml`. To use it without a config file, or over a tarsh theme, set `STARSHIP=on` in `config settings`. Try it first with `theme starship`.
+
+Don't add `eval "$(starship init ...)"` to tarshrc: the `STARSHIP` setting replaces it. `import-rc` notices that line in your `.bashrc` or `.zshrc` and turns starship on for you.
+
+tarsh passes starship the last exit status, how long the command took, the number of background jobs and the terminal width, so the `character` (✗ after a failure), `status`, `cmd_duration` and `jobs` modules work as they do elsewhere. Multi-line prompts (`add_newline`, `$line_break`) work too.
+
+If starship fails or takes more than 2 seconds, tarsh says so, uses its own prompt for the rest of the session, and lets you try again with `theme starship`. Starship's `right_format` (a right-hand prompt) isn't shown.
