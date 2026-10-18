@@ -31,6 +31,10 @@ int live_eligible(const char *line, char *why, size_t why_size);
 // Returns NULL if it couldn't run.
 char *live_run(const char *line, int max_lines, int *total_lines, int *failed);
 
+// What the last live_run() changed to keep the preview safe, e.g.
+// "would write this to pids.txt" ("" when nothing).
+const char *live_last_note(void);
+
 // `live` builtin.
 int live_builtin(int argc, char **argv);
 

@@ -127,7 +127,29 @@ $ grep -E '(ada|grace)' people.csv
   │ 3,grace,new york
 ```
 
-The preview runs in a **sandbox**: it can't create, change, delete or move files, use the network, signal other programs or reach your terminal, and it's stopped after a second. A mistyped command, or an awk program that calls `system("rm …")`, can't do anything harmful. Lines that write files (`>`, `>>`, `sed -i`, `sort -o`, `find -delete`), chain several commands (`;`, `&&`) or use `$(…)` are only explained, never previewed.
+Every grep in the line has its matches highlighted, even one in the middle of a pipe whose results go through `cut` or `sort` first. Use `grep -P` (or `rg`) for `\d`: plain grep reads `\d` as the letter d, and the hint warns you about it.
+
+The preview runs in a **sandbox**: it can't create, change, delete or move files, use the network, signal other programs or reach your terminal, and it's stopped after a second. A mistyped command, or an awk program that calls `system("rm …")`, can't do anything harmful.
+
+**Lines that write files are previewed too.** You see what *would* be written, and nothing is touched:
+
+```
+$ grep -E '^[0-9]+,a' people.csv > picked.txt
+  ▸ live: 2 lines (would write this to picked.txt)
+  │ 1,ada,london
+  │ 4,alan,london
+```
+
+| you type | the preview shows |
+| --- | --- |
+| `… > file`, `… >> file`, `… &> file`, `… \| tee file` | the text that would go into the file |
+| `sed -i 's/old/new/' notes.txt` (also `sed -Ei.bak`, `awk -i inplace`) | the file as it would be after the edit |
+| `sort -o sorted.txt data` | the sorted text |
+| `find . -name '*.tmp' -delete` | the files that would be deleted |
+| `make; and echo ok`, `a && b \|\| c`, `echo "$(wc -l < f)"` | the output of the whole line |
+| `tr a-z A-Z <<< "hi"`, `for f in *.txt; do wc -l "$f"; done`, here-documents | run in bash, zsh or fish, still in the sandbox |
+
+The rule is that every command in the line, including those inside `$(…)`, after `xargs` or `env`, and in `find -exec`, must be in `LIVE_COMMANDS`. tarsh script lines, `case` blocks and function definitions are explained but not run.
 
 **`explain`** prints the full breakdown, including what each regex means, any time:
 

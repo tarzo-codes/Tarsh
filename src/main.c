@@ -120,7 +120,9 @@ static int interactive_loop(void) {
     universal_sync();
     dirs_note_cwd();
 
-    char *line = lineedit_read(render_prompt());
+    const char *prompt = render_prompt();
+    lineedit_set_right_prompt(render_right_prompt());
+    char *line = lineedit_read(prompt);
     // NOTE: Ctrl+D (EOF) leaves the shell
     if (line == NULL) {
       if (jobs_has_stopped()) {

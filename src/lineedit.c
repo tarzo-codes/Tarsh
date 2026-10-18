@@ -125,7 +125,7 @@ static int is_continuation(char c) {
   return ((unsigned char)c & 0xC0) == 0x80;
 }
 
-static size_t previous_char(const EditBuffer *line, size_t at) {
+static size_t previous_codepoint(const EditBuffer *line, size_t at) {
   if (at == 0) {
     return 0;
   }
@@ -136,44 +136,62 @@ static size_t previous_char(const EditBuffer *line, size_t at) {
   return at;
 }
 
-static size_t next_char(const EditBuffer *line, size_t at) {
-  if (at >= line->length) {
-    return line->length;
-  }
-  at++;
-  while (at < line->length && is_continuation(line->data[at])) {
-    at++;
+static unsigned codepoint_at(const EditBuffer *line, size_t at) {
+  unsigned codepoint = 0;
+  if (at < line->length) utf8_decode(line->data + at, line->length - at, &codepoint);
+  return codepoint;
+}
+
+// One step left or right moves over a whole character, accents and other
+// combining marks included (they take no column of their own).
+static size_t previous_char(const EditBuffer *line, size_t at) {
+  at = previous_codepoint(line, at);
+  while (at > 0 && char_columns(codepoint_at(line, at)) == 0) {
+    at = previous_codepoint(line, at);
   }
   return at;
 }
 
-// Columns `text` takes on screen: UTF-8 characters count once and color
-// escape sequences (ESC [ ... m) count zero.
+static size_t next_char(const EditBuffer *line, size_t at) {
+  if (at >= line->length) {
+    return line->length;
+  }
+  unsigned codepoint;
+  at += utf8_decode(line->data + at, line->length - at, &codepoint);
+  while (at < line->length) {
+    size_t step = utf8_decode(line->data + at, line->length - at, &codepoint);
+    if (char_columns(codepoint) != 0) break;
+    at += step;
+  }
+  return at;
+}
+
+// Columns `text` takes on screen (wide characters count two, color codes
+// and other escape sequences zero).
 static size_t display_width(const char *text, size_t length) {
-  size_t width = 0;
-  for (size_t i = 0;i < length;i++) {
+  return text_columns(text, length);
+}
+
+// Where text lands on screen, the way a terminal wraps it: a character
+// that doesn't fit at the end of a row moves to the next one (a wide one
+// can leave a gap). `column` may end equal to `columns`: the row is full
+// and the terminal is waiting to wrap.
+static void layout_advance(const char *text, size_t length, int columns, int *row, int *column) {
+  for (size_t i = 0;i < length;) {
     if (text[i] == '\x1b') {
-      if (i + 1 < length && text[i + 1] == '[') {
-        i += 2;
-        while (i < length && !((unsigned char)text[i] >= 0x40 && (unsigned char)text[i] <= 0x7E)) {
-          i++;
-        }
-      }
-      else if (i + 1 < length && text[i + 1] == ']') {
-        // OSC (window titles, hyperlinks): ends with BEL or ESC \.
-        i += 2;
-        while (i < length && text[i] != '\a' && !(text[i] == '\x1b' && i + 1 < length && text[i + 1] == '\\')) {
-          i++;
-        }
-        if (i < length && text[i] == '\x1b') i++;
-      }
+      i += escape_length(text + i, length - i);
       continue;
     }
-    if (!is_continuation(text[i])) {
-      width++;
+    unsigned codepoint;
+    i += utf8_decode(text + i, length - i, &codepoint);
+    int width = text[i - 1] == '\t' ? 1 : char_columns(codepoint);
+    if (width == 0) continue;
+    if (*column + width > columns) {
+      (*row)++;
+      *column = 0;
     }
+    *column += width;
   }
-  return width;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +206,7 @@ static char *preview_text = NULL;     // last preview output
 static char *preview_for = NULL;      // the line it belongs to
 static int preview_total = 0;
 static int preview_failed = 0;
+static char preview_note[512];        // "would write this to pids.txt"
 static int below_off = 0;             // set while finishing a line
 
 static void preview_clear(void) {
@@ -218,11 +237,22 @@ static void clip(const char *text, int width, char *out, size_t size) {
       i = j;
       continue;
     }
-    if (((unsigned char)text[i] & 0xC0) != 0x80) {
-      if (columns >= width) break;
-      columns++;
+    if (text[i] == '\x1b') {
+      i += escape_length(text + i, strlen(text + i)) - 1;
+      continue;
     }
-    out[used++] = text[i] == '\t' ? ' ' : text[i];
+    unsigned codepoint;
+    size_t step = utf8_decode(text + i, strlen(text + i), &codepoint);
+    int char_width = text[i] == '\t' ? 1 : char_columns(codepoint);
+    if (columns + char_width > width) break;
+    if (used + step >= size - 16) break;
+    columns += char_width;
+    if (text[i] == '\t') out[used++] = ' ';
+    else {
+      memcpy(out + used, text + i, step);
+      used += step;
+    }
+    i += step - 1;
   }
   memcpy(out + used, "\x1b[0m", 5);
   out[used + 4] = '\0';
@@ -264,11 +294,28 @@ static int compose_below(const EditBuffer *line, char below[][1024]) {
           while (*cursor == ' ') { cursor++; length--; }
           piece_columns = (int)display_width(cursor, length);
         }
-        if (row_used + length < sizeof(row) - 16) {
-          memcpy(row + row_used, cursor, length);
-          row_used += length;
-          row[row_used] = '\0';
-          row_columns += piece_columns;
+        // A step too long for a row of its own wraps between words.
+        size_t done = 0;
+        while (done < length && lines_used < 6) {
+          size_t word = done;
+          while (word < length && cursor[word] == ' ') word++;
+          while (word < length && cursor[word] != ' ') word++;
+          int word_columns = (int)display_width(cursor + done, word - done);
+          if (row_columns + word_columns > width && row_columns > 2) {
+            clip(row, width, below[count++], 1024);
+            lines_used++;
+            row_used = snprintf(row, sizeof(row), "\x1b[2m    ");
+            row_columns = 4;
+            while (done < word && cursor[done] == ' ') done++;
+            word_columns = (int)display_width(cursor + done, word - done);
+          }
+          if (row_used + (word - done) < sizeof(row) - 16) {
+            memcpy(row + row_used, cursor + done, word - done);
+            row_used += word - done;
+            row[row_used] = '\0';
+            row_columns += word_columns;
+          }
+          done = word;
         }
         cursor += length;
       }
@@ -278,7 +325,7 @@ static int compose_below(const EditBuffer *line, char below[][1024]) {
   }
 
   if (preview_text != NULL && preview_for != NULL) {
-    char header[256];
+    char header[1024];
     int shown = 0;
     for (const char *c = preview_text;*c;c++) if (*c == '\n') shown++;
     if (preview_text[0] && preview_text[strlen(preview_text) - 1] != '\n') shown++;
@@ -287,6 +334,10 @@ static int compose_below(const EditBuffer *line, char below[][1024]) {
     else if (preview_total == 0) snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: no output\x1b[0m", stale ? " (updating)" : "");
     else if (preview_total > shown) snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: first %d of %s%d lines\x1b[0m", stale ? " (updating)" : "", shown, preview_total > 60 ? "more than " : "", preview_total > 60 ? 50 : preview_total);
     else snprintf(header, sizeof(header), "\x1b[2m\u25B8 live%s: %d line%s\x1b[0m", stale ? " (updating)" : "", shown, shown == 1 ? "" : "s");
+    if (preview_note[0] && !preview_failed) {
+      size_t used = strlen(header);
+      snprintf(header + used, sizeof(header) - used, "\x1b[2;36m (%s)\x1b[0m", preview_note);
+    }
     clip(header, width, below[count++], 1024);
 
     const char *cursor = preview_text;
@@ -313,7 +364,7 @@ static int preview_wanted(const EditBuffer *line) {
   }
   // A lone echo/ls/cat shows nothing you won't see anyway; previews are
   // for pipelines and for commands that filter or transform.
-  if (strchr(line->data, '|') == NULL) {
+  if (strpbrk(line->data, "|>;&$`") == NULL) {
     static const char *plain[] = { "echo", "printf", "cat", "ls", "seq", NULL };
     size_t word = strspn(line->data, " ");
     size_t length = strcspn(line->data + word, " ");
@@ -336,15 +387,31 @@ static void preview_update(const EditBuffer *line) {
   preview_for = strdup(line->data);
   preview_total = total;
   preview_failed = failed || output == NULL;
+  snprintf(preview_note, sizeof(preview_note), "%s", live_last_note());
 }
 
 // Which row of the input (counting from the prompt's row) the cursor was
 // left on by the last redraw, so the next one can start from the top even
 // when the line has wrapped onto several rows.
 static int cursor_row = 0;
+// The last row the input reached in that redraw.
+static int last_end_row = 0;
+
+// The right-hand prompt (starship's right_format, RIGHT_FORMAT), or "".
+static char right_prompt[2048];
+
+void lineedit_set_right_prompt(const char *text) {
+  size_t kept = 0;
+  // One row only: anything after a newline is dropped.
+  for (size_t i = 0;text != NULL && text[i] && text[i] != '\n' && kept < sizeof(right_prompt) - 1;i++) {
+    if (text[i] != '\r') right_prompt[kept++] = text[i];
+  }
+  right_prompt[kept] = '\0';
+}
 
 // Draws the prompt and the line (highlighted, possibly wrapping over
-// several rows), the grey autosuggestion, and the hint/preview below.
+// several rows), the grey autosuggestion, the right prompt, and the
+// hint/preview below.
 static void refresh_line_with(const char *prompt, const EditBuffer *line, const char *suggestion) {
   char *shown = highlighting ? highlight_line(line->data) : NULL;
   const char *body = shown ? shown : line->data;
@@ -355,7 +422,7 @@ static void refresh_line_with(const char *prompt, const EditBuffer *line, const 
 
   static char below[MAX_BELOW][1024];
   int below_count = compose_below(line, below);
-  size_t frame_size = strlen(prompt) + strlen(body) + strlen(suggestion) + 256;
+  size_t frame_size = strlen(prompt) + strlen(body) + strlen(suggestion) + strlen(right_prompt) + 256;
   for (int i = 0;i < below_count;i++) frame_size += strlen(below[i]) + 8;
   char *frame = malloc(frame_size);
   if (frame == NULL) {
@@ -363,9 +430,27 @@ static void refresh_line_with(const char *prompt, const EditBuffer *line, const 
     return;
   }
 
-  size_t prompt_width = display_width(prompt, strlen(prompt));
-  size_t total = prompt_width + display_width(line->data, line->length) + display_width(suggestion, strlen(suggestion));
-  size_t cursor_at = prompt_width + display_width(line->data, line->cursor);
+  // Where everything lands, worked out the way the terminal will wrap it.
+  int end_row = 0, end_column = 0;
+  layout_advance(prompt, strlen(prompt), columns, &end_row, &end_column);
+  int target_row = end_row, target_column = end_column;
+  layout_advance(line->data, line->cursor, columns, &target_row, &target_column);
+  if (line->cursor < line->length) {
+    // The cursor sits on the next character, which may itself wrap.
+    unsigned codepoint;
+    utf8_decode(line->data + line->cursor, line->length - line->cursor, &codepoint);
+    int width = char_columns(codepoint);
+    if (target_column + (width > 0 ? width : 1) > columns) {
+      target_row++;
+      target_column = 0;
+    }
+  }
+  else if (target_column >= columns) {
+    target_row++;
+    target_column = 0;
+  }
+  layout_advance(line->data, line->length, columns, &end_row, &end_column);
+  layout_advance(suggestion, strlen(suggestion), columns, &end_row, &end_column);
 
   int used = 0;
   // Back to the prompt's first row, and clear everything from there down.
@@ -376,11 +461,23 @@ static void refresh_line_with(const char *prompt, const EditBuffer *line, const 
   if (suggestion[0]) {
     used += snprintf(frame + used, frame_size - used, "\x1b[90m%s\x1b[0m", suggestion);
   }
+
+  // The right prompt: on the input row, while everything fits on one row
+  // with a gap; it steps aside as soon as the line gets long.
+  int right_width = (int)display_width(right_prompt, strlen(right_prompt));
+  if (right_width > 0 && end_row == 0 && end_column + 2 + right_width < columns) {
+    used += snprintf(frame + used, frame_size - used, "\x1b[%dG%s\x1b[0m", columns - right_width, right_prompt);
+  }
+
   // Exactly filling the last row leaves the terminal waiting to wrap;
   // move down so the arithmetic below holds.
-  int end_row = (int)(total / columns);
-  if (total > 0 && total % columns == 0) {
+  // (The input itself still ends on the full row: that's where Enter
+  // leaves from.)
+  last_end_row = end_row;
+  if (end_column >= columns) {
     used += snprintf(frame + used, frame_size - used, "\n\r");
+    end_row++;
+    end_column = 0;
   }
   int row = end_row;
 
@@ -396,8 +493,6 @@ static void refresh_line_with(const char *prompt, const EditBuffer *line, const 
   }
 
   // Put the cursor where it belongs.
-  int target_row = (int)(cursor_at / columns);
-  int target_column = (int)(cursor_at % columns);
   if (row > target_row) {
     used += snprintf(frame + used, frame_size - used, "\x1b[%dA", row - target_row);
   }
@@ -1077,18 +1172,22 @@ char *lineedit_read_initial(const char *full_prompt, const char *initial) {
 
   // Leave the cursor after the last row of the input.
   {
-    size_t total = display_width(prompt, strlen(prompt)) + display_width(line.data, line.length);
-    int last_row = (int)(total / terminal_width());
-    if (total > 0 && total % terminal_width() == 0) last_row--;
+    int last_row = last_end_row;
     if (last_row > cursor_row) {
       char move[32];
       int n = snprintf(move, sizeof(move), "\x1b[%dB", last_row - cursor_row);
       if (write(STDOUT_FILENO, move, n) < 0) {}
     }
   }
-  if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
+  // A line that exactly filled its last row already moved down.
+  if (cursor_row > last_end_row) {
+    if (write(STDOUT_FILENO, "\r", 1) < 0) {}
+  }
+  else if (write(STDOUT_FILENO, "\r\n", 2) < 0) {}
   cursor_row = 0;
   below_off = 0;
+  // The right prompt belongs to this line only (not to "..." continuations).
+  right_prompt[0] = '\0';
   free(search);
   lineedit_raw_off();
   free(draft);

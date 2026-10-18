@@ -175,8 +175,14 @@ char *pipehint_regex(const char *pattern, int extended) {
       char e = pattern[i + 1];
       next = i + 2;
       switch (e) {
-        case 'd': snprintf(thing, sizeof(thing), "a digit"); break;
-        case 'D': snprintf(thing, sizeof(thing), "a non-digit"); break;
+        case 'd':
+          if (extended == 2) snprintf(thing, sizeof(thing), "a digit");
+          else snprintf(thing, sizeof(thing), "\"d\" (not a digit: only grep -P knows \\d; use [0-9])");
+          break;
+        case 'D':
+          if (extended == 2) snprintf(thing, sizeof(thing), "a non-digit");
+          else snprintf(thing, sizeof(thing), "\"D\" (only grep -P knows \\D; use [^0-9])");
+          break;
         case 'w': snprintf(thing, sizeof(thing), "a word character (letter, digit, _)"); break;
         case 'W': snprintf(thing, sizeof(thing), "a non-word character"); break;
         case 's': snprintf(thing, sizeof(thing), "a space"); break;
@@ -476,7 +482,8 @@ static void describe(const ArgList *w, int has_input, Desc *d) {
   }
 
   if (!strcmp(name, "grep") || !strcmp(name, "egrep") || !strcmp(name, "fgrep") || !strcmp(name, "rg")) {
-    int extended = !strcmp(name, "egrep") || !strcmp(name, "rg") || has_flag(w, 'E', "--extended-regexp") || has_flag(w, 'P', "--perl-regexp");
+    int perl = !strcmp(name, "rg") || has_flag(w, 'P', "--perl-regexp");
+    int extended = perl ? 2 : (!strcmp(name, "egrep") || has_flag(w, 'E', "--extended-regexp"));
     int fixed = !strcmp(name, "fgrep") || has_flag(w, 'F', "--fixed-strings");
     const char *pattern = option_value(w, 'e', "--regexp");
     int file_index = 0;
@@ -506,6 +513,11 @@ static void describe(const ArgList *w, int has_input, Desc *d) {
       snprintf(d->action, sizeof(d->action), "keeps lines %smatching /%s/%s%s%s%s", invert, pattern, word, caseless, files,
                has_flag(w, 'n', "--line-number") ? " (with line numbers)" : "");
       snprintf(d->output, sizeof(d->output), "%s", invert[0] ? "the lines that don't match" : "the matching lines");
+    }
+    if (!fixed && !perl && (strstr(pattern, "\\d") || strstr(pattern, "\\D"))) {
+      // A classic surprise: grep and grep -E don't know \d.
+      size_t used = strlen(d->action);
+      snprintf(d->action + used, sizeof(d->action) - used, " (careful: \\d isn't a digit here: use [0-9], or grep -P)");
     }
     if (!fixed) {
       char *explained = pipehint_regex(pattern, extended);

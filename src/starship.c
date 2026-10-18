@@ -80,23 +80,67 @@ const char *starship_path(void) {
   return program[0] ? program : NULL;
 }
 
-static int has_config(void) {
+// Finds starship's config file the way starship does. Returns 1 and the
+// path when there is one.
+static int config_file(char *path, size_t size) {
   const char *custom = getenv("STARSHIP_CONFIG");
   if (custom != NULL && custom[0] != '\0') {
-    return access(custom, R_OK) == 0;
+    snprintf(path, size, "%s", custom);
+    return access(path, R_OK) == 0;
   }
-  char path[PATH_MAX];
   const char *xdg = getenv("XDG_CONFIG_HOME");
   const char *home = getenv("HOME");
   if (xdg != NULL && xdg[0] != '\0') {
-    snprintf(path, sizeof(path), "%s/starship.toml", xdg);
+    snprintf(path, size, "%s/starship.toml", xdg);
     if (access(path, R_OK) == 0) return 1;
   }
   if (home != NULL) {
-    snprintf(path, sizeof(path), "%s/.config/starship.toml", home);
+    snprintf(path, size, "%s/.config/starship.toml", home);
     if (access(path, R_OK) == 0) return 1;
   }
   return 0;
+}
+
+static int has_config(void) {
+  char path[PATH_MAX];
+  return config_file(path, sizeof(path));
+}
+
+int starship_has_right_prompt(void) {
+  static char cached_path[PATH_MAX];
+  static struct timespec cached_time;
+  static off_t cached_size = -1;
+  static int cached_answer = 0;
+
+  char path[PATH_MAX];
+  struct stat info;
+  if (!config_file(path, sizeof(path)) || stat(path, &info) != 0) {
+    return 0;
+  }
+  if (cached_size == info.st_size && strcmp(path, cached_path) == 0 &&
+      cached_time.tv_sec == info.st_mtim.tv_sec && cached_time.tv_nsec == info.st_mtim.tv_nsec) {
+    return cached_answer;
+  }
+  snprintf(cached_path, sizeof(cached_path), "%s", path);
+  cached_time = info.st_mtim;
+  cached_size = info.st_size;
+  cached_answer = 0;
+
+  // A top-level `right_format = ...` line (not commented out).
+  FILE *file = fopen(path, "r");
+  if (file != NULL) {
+    char line[1024];
+    while (fgets(line, sizeof(line), file)) {
+      const char *text = line + strspn(line, " \t");
+      if (text[0] == '[') break;  // tables start: past the top level
+      if (strncmp(text, "right_format", 12) == 0 && strchr(text, '=') != NULL) {
+        cached_answer = 1;
+        break;
+      }
+    }
+    fclose(file);
+  }
+  return cached_answer;
 }
 
 int starship_wanted(int theme_in_use) {
@@ -120,7 +164,7 @@ static long long now_ms(void) {
   return (long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-char *starship_render(int last_status, double last_duration, int jobs) {
+static char *render(int last_status, double last_duration, int jobs, int right) {
   const char *path = starship_path();
   if (path == NULL) {
     return NULL;
@@ -137,7 +181,8 @@ char *starship_render(int last_status, double last_duration, int jobs) {
   snprintf(duration_arg, sizeof(duration_arg), "--cmd-duration=%lld", (long long)(last_duration * 1000.0));
   snprintf(jobs_arg, sizeof(jobs_arg), "--jobs=%d", jobs);
   snprintf(width_arg, sizeof(width_arg), "--terminal-width=%d", columns);
-  char *argv[] = { (char *)path, "prompt", status_arg, duration_arg, jobs_arg, width_arg, NULL };
+  char *argv[] = { (char *)path, "prompt", status_arg, duration_arg, jobs_arg, width_arg,
+                   right ? "--right" : NULL, NULL };
 
   int out[2];
   if (pipe2(out, O_CLOEXEC) != 0) {
@@ -221,4 +266,12 @@ char *starship_render(int last_status, double last_duration, int jobs) {
   }
   text[kept] = '\0';
   return text;
+}
+
+char *starship_render(int last_status, double last_duration, int jobs) {
+  return render(last_status, last_duration, jobs, 0);
+}
+
+char *starship_render_right(int last_status, double last_duration, int jobs) {
+  return render(last_status, last_duration, jobs, 1);
 }

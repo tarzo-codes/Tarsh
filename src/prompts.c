@@ -17,6 +17,9 @@
 
 static PromptState active_config;
 static char rendered_prompt[PROMPT_RENDER_MAX];
+static char rendered_right[PROMPT_RENDER_MAX];
+static char right_format[PROMPT_FORMAT_MAX];
+static int starship_drew_left = 0;
 
 void prompt_write_defaults(FILE *file) {
   fprintf(file, "# Prompt\n");
@@ -26,12 +29,17 @@ void prompt_write_defaults(FILE *file) {
   fprintf(file, "DEPTH=%d\n", active_config.directory_depth);
   fprintf(file, "SHOW_TIME=%d\n", active_config.show_execution_time);
   fprintf(file, "SYMBOL=%s\n", active_config.prompt_symbol);
+  fprintf(file, "# Shown at the right edge while the line is short (same %% codes; empty: none)\n");
+  fprintf(file, "RIGHT_FORMAT=\n");
 }
 
 int prompt_configure(const char *key, const char *value) {
   if (strcmp(key, "FORMAT") == 0 || strcmp(key, "FORMATE") == 0) {
     // FORMATE is the misspelling older configs were written with.
     snprintf(active_config.format, sizeof(active_config.format), "%s", value);
+  }
+  else if (strcmp(key, "RIGHT_FORMAT") == 0) {
+    snprintf(right_format, sizeof(right_format), "%s", value);
   }
   else if (strcmp(key, "DEPTH") == 0) {
     int depth = atoi(value);
@@ -122,13 +130,17 @@ static void append_working_directory(char *out, size_t out_size, size_t *used) {
   *used += snprintf(out + *used, (*used < out_size) ? out_size - *used : 0, "%s", display);
 }
 
+static void render_format(const char *format, char *rendered_prompt);
+
 const char *render_prompt(void) {
+  starship_drew_left = 0;
   if (starship_wanted(theme_active())) {
     static char *from_starship = NULL;
     free(from_starship);
     from_starship = starship_render(active_config.last_command_status,
                                     active_config.last_command_duration, jobs_count());
     if (from_starship != NULL) {
+      starship_drew_left = 1;
       return from_starship;
     }
     // starship failed or was too slow: tarsh's own prompt, just this once.
@@ -149,11 +161,17 @@ const char *render_prompt(void) {
     }
   }
 
+  render_format(active_config.format, rendered_prompt);
+  return rendered_prompt;
+}
+
+#define RENDER_SIZE PROMPT_RENDER_MAX
+static void render_format(const char *format, char *rendered_prompt) {
   size_t used = 0;
   rendered_prompt[0] = '\0';
 
-  for (const char *cursor = active_config.format; *cursor != '\0'; cursor++) {
-    if (used >= sizeof(rendered_prompt) - 1) {
+  for (const char *cursor = format; *cursor != '\0'; cursor++) {
+    if (used >= RENDER_SIZE - 1) {
       break;
     }
 
@@ -164,7 +182,7 @@ const char *render_prompt(void) {
     }
 
     cursor++;
-    size_t remaining = sizeof(rendered_prompt) - used;
+    size_t remaining = RENDER_SIZE - used;
 
     switch (*cursor) {
       case 'u':
@@ -174,7 +192,7 @@ const char *render_prompt(void) {
         used += snprintf(rendered_prompt + used, remaining, "%s", active_config.hostname);
         break;
       case 'w':
-        append_working_directory(rendered_prompt, sizeof(rendered_prompt), &used);
+        append_working_directory(rendered_prompt, RENDER_SIZE, &used);
         break;
       case 'l':
         used += snprintf(rendered_prompt + used, remaining, "%s", lang_current_name());
@@ -209,12 +227,28 @@ const char *render_prompt(void) {
         break;
     }
 
-    if (used >= sizeof(rendered_prompt) - 1) {
-      used = sizeof(rendered_prompt) - 1;
+    if (used >= RENDER_SIZE - 1) {
+      used = RENDER_SIZE - 1;
       rendered_prompt[used] = '\0';
       break;
     }
   }
 
-  return rendered_prompt;
+}
+
+const char *render_right_prompt(void) {
+  if (starship_drew_left && starship_has_right_prompt()) {
+    static char *from_starship = NULL;
+    free(from_starship);
+    from_starship = starship_render_right(active_config.last_command_status,
+                                          active_config.last_command_duration, jobs_count());
+    if (from_starship != NULL) {
+      return from_starship;
+    }
+  }
+  if (right_format[0] == '\0') {
+    return "";
+  }
+  render_format(right_format, rendered_right);
+  return rendered_right;
 }

@@ -39,8 +39,39 @@ result: the lines that don't match
 grace
 ada
 not previewed: rm isn't in LIVE_COMMANDS
-not previewed: lines that write files aren't previewed
+(would write this to sorted.txt)
+1,ada
+2,linus
+3,grace
+id,name
 live commands for this session updated (LIVE_COMMANDS in config.t keeps them)
 rm: cannot remove 'keep.txt': Operation not permitted
 precious
+live commands for this session updated (LIVE_COMMANDS in config.t keeps them)
+(would add this to the end of names.txt)
+ada
+(sed -i would change notes.txt (showing the new text))
+hello there
+foo bar
+(sort -o would write to sorted.txt)
+1,ada
+2,linus
+3,grace
+id,name
+(find -delete would delete these)
+./notes.txt
+1
+found
+rows: 4
+not previewed: rm isn't in LIVE_COMMANDS
+HERE STRING
+3
+1. grep -E '\d+' people.csv
+     keeps lines matching /\d+/ in people.csv (careful: \d isn't a digit here: use [0-9], or grep -P)
+     /\d+/ means: "d" (not a digit: only grep -P knows \d; use [0-9]) one or more times
+result: the matching lines
+hello world
+foo bar
+names.txt was not created
+sorted.txt was not created
 [exit 0]

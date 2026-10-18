@@ -43,4 +43,9 @@ void update_prompt(double duration_seconds, int status);
 // module and stays valid until the next call.
 const char *render_prompt(void);
 
+// The right-hand prompt for the line render_prompt() just made: starship's
+// right_format when starship drew the prompt, else RIGHT_FORMAT ("" for
+// none). Call after render_prompt().
+const char *render_right_prompt(void);
+
 #endif

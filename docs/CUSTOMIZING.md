@@ -33,6 +33,7 @@ FORMAT=[%u@%h] %w (%l) %s
 DEPTH=1
 SHOW_TIME=1
 SYMBOL=$
+RIGHT_FORMAT=
 STARSHIP=auto
 FZF=1
 FZF_COMMANDS=cd,cp,mv,rm,nvim,vim,nano,cat,less,code,source
@@ -53,6 +54,7 @@ LIVE_DELAY=300
 | `FORMAT` | the classic prompt (used when no theme is on): `%u` user, `%h` host, `%w` folder, `%l` shell language, `%s` symbol, `%t` last duration, `%?` last exit status, `%%` a percent sign |
 | `DEPTH` | how many folders `%w` shows (`0` = the whole path) |
 | `SHOW_TIME`, `SYMBOL` | whether `%t` shows; what `%s` shows |
+| `RIGHT_FORMAT` | a prompt at the right edge of the line, with the same `%` codes as `FORMAT` (e.g. `%t %?`). It steps aside when what you type gets long |
 | `STARSHIP` | use the [starship](https://starship.rs) prompt: `auto` (when it's installed and `~/.config/starship.toml` exists, unless a tarsh theme is on), `on` or `off`. See [Starship](#starship) |
 | `FZF`, `FZF_COMMANDS` | turn the pickers off, or choose which commands open one on space (also supported: `vi`, `micro`, `hx`, `emacs`, `bat`, `ls`, `ln`, `rmdir`, `pushd`, `chmod`) |
 | `SHELL_LANG` | `bash`, `zsh`, `fish` or `sh`: the shell used when tarsh can't tell which one a line was written for (`lang NAME` changes it for the session) |
@@ -142,6 +144,6 @@ Already using [starship](https://starship.rs) in bash or zsh? tarsh can show the
 
 Don't add `eval "$(starship init ...)"` to tarshrc: the `STARSHIP` setting replaces it. `import-rc` notices that line in your `.bashrc` or `.zshrc` and turns starship on for you.
 
-tarsh passes starship the last exit status, how long the command took, the number of background jobs and the terminal width, so the `character` (✗ after a failure), `status`, `cmd_duration` and `jobs` modules work as they do elsewhere. Multi-line prompts (`add_newline`, `$line_break`) work too.
+tarsh passes starship the last exit status, how long the command took, the number of background jobs and the terminal width, so the `character` (✗ after a failure), `status`, `cmd_duration` and `jobs` modules work as they do elsewhere. Multi-line prompts (`add_newline`, `$line_break`), emoji and wide characters (CJK) work too: the cursor lands where it should.
 
-If starship fails or takes more than 2 seconds, tarsh says so, uses its own prompt for the rest of the session, and lets you try again with `theme starship`. Starship's `right_format` (a right-hand prompt) isn't shown.
+If starship fails or takes more than 2 seconds, tarsh says so, uses its own prompt for the rest of the session, and lets you try again with `theme starship`. Starship's `right_format` (a right-hand prompt) works too: it sits at the right edge of the line you're typing on and steps aside when the line gets long.

@@ -31,7 +31,7 @@ Full instructions, options, making it your login shell, updating and uninstallin
 
 **Typing less (from fish).** Grey **autosuggestions** from history; **syntax highlighting** as you type (unknown commands show red); ↑ searches for what you've typed; **abbreviations** (`abbr gco git checkout`); `set -U` **universal variables** shared between terminals; folder history (`prevd`, `nextd`, `cdh`, Alt+←/→); typing a folder path goes there; `string`, `math`, `count`, `contains`, `random`, `and`/`or`/`not`; variables are never split at spaces.
 
-**See what a command will do.** As you type a `|` / `>>` / `<<` chain, a line under the prompt explains every step and the output to expect. Regexes are explained in words. For commands you list (grep, awk, sed, jq, ...), a **live preview** shows the real output as you type, in a sandbox that can't change files or touch the network. grep matches are highlighted, so it doubles as a regex tester. `explain 'LINE'` prints the full breakdown.
+**See what a command will do.** As you type a `|` / `>>` / `<<` chain, a line under the prompt explains every step and the output to expect. Regexes are explained in words. For commands you list (grep, awk, sed, jq, ...), a **live preview** shows the real output as you type, in a sandbox that can't change files or touch the network. Every grep's matches are highlighted, so it doubles as a regex tester. Lines that write files show what *would* be written: `> file`, `sed -i`, `sort -o`, even `find -delete`. `explain 'LINE'` prints the full breakdown.
 
 **A real shell.** Pipes, all the redirections, `&&` `||` `;` `&`, wildcards, `$(...)`, aliases, Ctrl+Z / `fg` / `bg` / `jobs`, multi-line input, scripts, `-c`, login shells.
 
@@ -39,7 +39,7 @@ Full instructions, options, making it your login shell, updating and uninstallin
 
 **Other shells' commands.** Paste bash, zsh or fish syntax and tarsh recognises it, runs it in that shell, brings back any folder or variable changes, and tells you in one line what happened. `source venv/bin/activate` just works. Scripts without a `#!` line are run by the right shell.
 
-**Your setup.** `config` edits your startup file (`~/.config/tarsh/tarshrc`, tarsh's `.bashrc`). `import-rc` copies your aliases from bash and zsh. **`theme edit`** opens a theme editor in your browser where you design the prompt (git, programming languages, colors, Nerd Font icons) with a live preview. Using **starship**? tarsh shows your starship prompt as well (`STARSHIP=auto`).
+**Your setup.** `config` edits your startup file (`~/.config/tarsh/tarshrc`, tarsh's `.bashrc`). `import-rc` copies your aliases from bash and zsh. **`theme edit`** opens a theme editor in your browser where you design the prompt (git, programming languages, colors, Nerd Font icons) with a live preview. Using **starship**? tarsh shows your starship prompt as well, right prompt included (`STARSHIP=auto`).
 
 **Help when things go wrong.** "did you mean: ls", "on Linux that's: clear", "that's a folder: cd into it", clear errors with line numbers, and `help` for a tour.
 

@@ -31,4 +31,10 @@ int starship_wanted(int theme_in_use);
 // starship is missing, fails or takes too long.
 char *starship_render(int last_status, double last_duration, int jobs);
 
+// Does starship.toml set right_format (a right-hand prompt)?
+int starship_has_right_prompt(void);
+
+// `starship prompt --right`, the same way.
+char *starship_render_right(int last_status, double last_duration, int jobs);
+
 #endif

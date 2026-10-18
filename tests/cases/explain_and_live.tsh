@@ -12,3 +12,19 @@ live test 'sort people.csv > sorted.txt'
 live add rm
 live test 'rm -f keep.txt'
 cat keep.txt
+live remove rm
+# writes are simulated: you see what would be written, and nothing changes
+printf 'hello world\nfoo bar\n' > notes.txt
+live test 'grep -i ADA people.csv | cut -d, -f2 >> names.txt'
+live test "sed -i 's/world/there/' notes.txt"
+live test "sort -o sorted.txt people.csv"
+live test "find . -name 'n*.txt' -delete"
+live test 'grep -c ada people.csv && echo found || echo missing'
+live test 'echo "rows: $(wc -l < people.csv)"'
+live test 'echo $(rm keep.txt)'
+live test 'tr a-z A-Z <<< "here string"'
+live test 'grep -v ada people.csv 2>/dev/null | wc -l'
+explain "grep -E '\d+' people.csv"
+cat notes.txt
+test -e names.txt || echo 'names.txt was not created'
+test -e sorted.txt || echo 'sorted.txt was not created'

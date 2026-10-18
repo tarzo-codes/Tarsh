@@ -22,6 +22,10 @@ void editbuf_delete_before(EditBuffer *line, size_t count);
 // Ctrl+D at an empty prompt.
 char *lineedit_read(const char *prompt);
 
+// Text drawn at the right edge of the input row (a right prompt) while the
+// line is short enough; "" or NULL for none. Applies to the next read.
+void lineedit_set_right_prompt(const char *text);
+
 // Same, with `initial` already typed (used to pre-indent script blocks).
 char *lineedit_read_initial(const char *prompt, const char *initial);
 

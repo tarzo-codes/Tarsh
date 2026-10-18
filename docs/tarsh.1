@@ -91,7 +91,14 @@ When every command is listed in
 .BR LIVE_COMMANDS ,
 the line is also run in a sandbox (no writing, deleting or renaming files, no network,
 no signals to other programs, stopped after one second) and the first lines of its output
-are shown.
+are shown, with grep matches highlighted.
+Writes are simulated: for
+.BR "> file" ,
+.BR "sed \-i" ,
+.B sort \-o
+or
+.B find \-delete
+the preview shows what would be written or deleted.
 .B explain
 .I line
 prints the full breakdown;

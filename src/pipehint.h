@@ -14,6 +14,8 @@ char *pipehint_detail(const char *line);
 
 // "line starts, then one or more digits, then the end of the line".
 // `extended` means ERE syntax (grep -E, awk, sed -E); otherwise BRE.
+// `extended`: 0 basic (grep, sed), 1 extended (grep -E, sed -E, awk),
+// 2 Perl-style (grep -P, rg), which also knows \d.
 char *pipehint_regex(const char *pattern, int extended);
 
 #endif
